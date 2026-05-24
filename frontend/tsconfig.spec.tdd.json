@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./out-tsc/spec-tdd",
+    "types": [
+      "jasmine"
+    ]
+  },
+  "include": [
+    "src/app/shared/footer/footer.component.spec.ts",
+    "src/app/shared/navigation/navigation.component.spec.ts",
+    "src/app/core/services/supabase.service.spec.ts",
+    "src/**/*.d.ts"
+  ]
+}

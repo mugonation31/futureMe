@@ -1,0 +1,31 @@
+{
+  "name": "invoice_me",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test:e2e": "npx playwright test",
+    "test:e2e:headed": "npx playwright test --headed",
+    "test:e2e:health": "npx playwright test health.spec.ts",
+    "test:e2e:cors": "npx playwright test cors.spec.ts",
+    "test:e2e:auth": "npx playwright test auth.spec.ts",
+    "test:e2e:db": "npx playwright test database.spec.ts",
+    "test:e2e:docker": "npx playwright test docker-healthcheck.spec.ts",
+    "test:e2e:report": "npx playwright show-report"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mugonation31/invoice_me.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/mugonation31/invoice_me/issues"
+  },
+  "homepage": "https://github.com/mugonation31/invoice_me#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}

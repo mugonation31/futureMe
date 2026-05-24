@@ -1,0 +1,41 @@
+<div class="dashboard-container">
+  <div class="header">
+    <h1>Dashboard</h1>
+  </div>
+
+  <div *ngIf="loading" class="loading">
+    Loading dashboard...
+  </div>
+
+  <div *ngIf="error" class="error-message">
+    {{ error }}
+  </div>
+
+  <div *ngIf="!loading && stats" class="dashboard-content">
+    <div class="stats-grid">
+      <div class="stat-card stat-budget">
+        <span class="stat-value">{{ formatCurrency(stats.total_budget) }}</span>
+        <span class="stat-label">Monthly Budget</span>
+      </div>
+      <div class="stat-card stat-spent">
+        <span class="stat-value">{{ formatCurrency(stats.total_spent) }}</span>
+        <span class="stat-label">Spent</span>
+      </div>
+      <div class="stat-card stat-remaining">
+        <span class="stat-value">{{ formatCurrency(stats.remaining_budget) }}</span>
+        <span class="stat-label">Remaining</span>
+      </div>
+      <div class="stat-card stat-savings">
+        <span class="stat-value">{{ stats.savings_rate | number:'1.0-1' }}%</span>
+        <span class="stat-label">Savings Rate</span>
+      </div>
+    </div>
+
+    <div class="quick-actions">
+      <h2>Quick Actions</h2>
+      <div class="actions-grid">
+        <a routerLink="/settings" class="action-btn action-settings">Settings</a>
+      </div>
+    </div>
+  </div>
+</div>

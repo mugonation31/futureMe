@@ -1,0 +1,57 @@
+<div class="onboarding-wrapper">
+  <div class="onboarding-grid">
+
+    <!-- Card 1: Create a household -->
+    <div class="card">
+      <h2 class="card-heading">Create a household</h2>
+      <p class="card-description">Start fresh — set up a new household and invite others.</p>
+
+      <div class="form-group">
+        <input
+          type="text"
+          [(ngModel)]="householdName"
+          placeholder="Household name"
+          class="form-input"
+          [disabled]="createLoading"
+        />
+      </div>
+
+      <button
+        class="btn-primary"
+        (click)="onCreateHousehold()"
+        [disabled]="createLoading"
+      >
+        {{ createLoading ? 'Creating...' : 'Create' }}
+      </button>
+
+      <p *ngIf="createError" class="error-text">{{ createError }}</p>
+    </div>
+
+    <!-- Card 2: Join a household -->
+    <div class="card">
+      <h2 class="card-heading">Join a household</h2>
+      <p class="card-description">Already have an invite code? Join an existing household.</p>
+
+      <div class="form-group">
+        <input
+          type="text"
+          [(ngModel)]="inviteCode"
+          placeholder="Invite code"
+          class="form-input"
+          [disabled]="joinLoading"
+        />
+      </div>
+
+      <button
+        class="btn-primary"
+        (click)="onJoinHousehold()"
+        [disabled]="joinLoading"
+      >
+        {{ joinLoading ? 'Joining...' : 'Join' }}
+      </button>
+
+      <p *ngIf="joinError" class="error-text">{{ joinError }}</p>
+    </div>
+
+  </div>
+</div>
