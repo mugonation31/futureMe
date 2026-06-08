@@ -33,7 +33,7 @@ export class SignupPage extends BasePage {
     this.loginLink            = page.getByRole('link', { name: 'Login' });
   }
 
-  async goto() {
+  override async goto() {
     await super.goto('/signup');
   }
 }

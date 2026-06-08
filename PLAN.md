@@ -180,3 +180,76 @@ Builds the household membership model (DB, backend API, frontend onboarding, gua
 - Should the invite code lookup be case-insensitive? Recommend yes — store uppercase, normalise input to uppercase before lookup.
 - What should happen if a user tries to join when they already belong to a different household? Planned as HTTP 409; UX copy TBD.
 - Should a household owner be able to list members? Not in scope now, but RLS design should not foreclose it.
+
+---
+
+## Feature: Neon Database Migration
+
+Switch the project's PostgreSQL backend from Supabase-hosted Postgres to Neon. Auth stays on Supabase (JWT). The backend already enforces auth at the API layer via explicit `user_id` filtering — no DB-level RLS is needed on Neon.
+
+### Task 15 — Neon migration file: adapt SQL for standard PostgreSQL (Size: S)
+
+**Description**: Create `supabase/migrations/20260608000001_neon_households.sql` — a Neon-compatible adaptation of `20260524000001_households.sql`. Remove `REFERENCES auth.users` FK constraints from `households.created_by` and `household_members.user_id` (keep as plain `uuid`). Remove all five RLS policies and both `ENABLE ROW LEVEL SECURITY` statements. Keep table DDL, unique constraints, `generate_invite_code()` function, trigger function, and trigger unchanged.
+
+**Depends on**: None
+
+**Files**:
+- `supabase/migrations/20260608000001_neon_households.sql` (new)
+
+**Acceptance criteria**:
+- File contains no `auth.users`, `auth.uid()`, `ROW LEVEL SECURITY`, or `CREATE POLICY`
+- `households` and `household_members` tables created with correct columns and constraints
+- `generate_invite_code()` function and `trg_households_invite_code` trigger present and valid
+
+---
+
+### Task 16 — Apply migration to Neon (Size: S)
+
+**Description**: Apply the adapted migration from Task 15 to the Neon project `proud-salad-21467632`. Verify tables and trigger exist by running `\dt` and a test `INSERT` to confirm `invite_code` is auto-populated.
+
+**Depends on**: Task 15
+
+**Acceptance criteria**:
+- Migration applies without errors
+- `households` and `household_members` tables exist in `neondb`
+- INSERT into `households` without `invite_code` produces a non-null 8-char uppercase value
+
+---
+
+### Task 17 — Update backend/.env.example for Neon (Size: S)
+
+**Description**: Replace Supabase `DATABASE_URL` placeholder with Neon-format placeholder (`postgresql://neondb_owner:your-neon-password@ep-your-endpoint-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require`). Add comment that `sslmode=require` is mandatory. Do NOT commit the real credential. Also add missing `RESEND_API_KEY` and `RESEND_FROM_EMAIL` placeholders.
+
+**Depends on**: None
+
+**Files**:
+- `backend/.env.example`
+
+**Acceptance criteria**:
+- `DATABASE_URL` shows Neon URL format with `?sslmode=require`
+- No real credential or `supabase.co` database host remains
+- `RESEND_API_KEY` and `RESEND_FROM_EMAIL` placeholders present
+
+---
+
+### Task 18 — Verify backend connects to Neon (Size: S)
+
+**Description**: Set real Neon `DATABASE_URL` in local `backend/.env` (not committed). Start backend and confirm asyncpg pool connects. Hit `GET /health` and an authenticated endpoint to confirm a real DB round-trip succeeds. Note: existing `ssl.create_default_context()` in `database.py` is already correct for Neon.
+
+**Depends on**: Task 16, Task 17
+
+**Files**:
+- `backend/database.py` (comment only if SSL adjustment needed)
+- `backend/.env` (local only, never committed)
+
+**Acceptance criteria**:
+- `uvicorn` starts without connection errors
+- `GET /health` returns HTTP 200
+- Authenticated endpoint returns non-500 response confirming DB is reachable
+
+---
+
+**Risks**:
+- Neon pooler endpoint uses PgBouncer (transaction mode). If asyncpg uses prepared statements, use the non-pooler endpoint instead.
+- `gen_random_bytes` requires `pgcrypto` — available by default on Neon Postgres 14+, but verify before applying migration.
+- Real Neon credential must never appear in any committed file.

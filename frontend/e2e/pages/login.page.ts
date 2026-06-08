@@ -35,7 +35,7 @@ export class LoginPage extends BasePage {
     this.signupLink   = page.getByRole('link', { name: 'Sign up' });
   }
 
-  async goto() {
+  override async goto() {
     await super.goto('/login');
   }
 }
