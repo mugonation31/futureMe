@@ -1,98 +1,41 @@
+/**
+ * SupabaseService stub — the app has migrated to AuthService.
+ * This file is retained only so existing guard specs that reference
+ * SupabaseService continue to compile while they are updated.
+ */
 import { Injectable } from '@angular/core';
-import { createClient, SupabaseClient, User, Session } from '@supabase/supabase-js';
-import { environment } from '../../../environments/environment';
-import { BehaviorSubject, Observable, filter, take, switchMap } from 'rxjs';
+import { BehaviorSubject, Observable } from 'rxjs';
 
-@Injectable({
-    providedIn: 'root'
-})
+@Injectable({ providedIn: 'root' })
 export class SupabaseService {
-    private supabase: SupabaseClient;
+  private currentUserSubject = new BehaviorSubject<any>(null);
+  currentUser$ = this.currentUserSubject.asObservable();
 
-    private currentUserSubject: BehaviorSubject<User | null>;
-    public currentUser$: Observable<User | null>;
+  getCurrentUser(): any {
+    return this.currentUserSubject.value;
+  }
 
-    // Tracks whether the initial session load is complete
-    private sessionLoadedSubject = new BehaviorSubject<boolean>(false);
-    public sessionLoaded$ = this.sessionLoadedSubject.asObservable();
+  currentUserAfterLoad$(): Observable<any> {
+    return this.currentUser$;
+  }
 
-    constructor() {
-        this.supabase = createClient(
-            environment.supabase.url,
-            environment.supabase.anonKey
-        );
+  async signUp(_email: string, _password: string, _name: string): Promise<any> {
+    throw new Error('SupabaseService is a stub. Use AuthService instead.');
+  }
 
-        this.currentUserSubject = new BehaviorSubject<User | null>(null);
-        this.currentUser$ = this.currentUserSubject.asObservable();
+  async signIn(_email: string, _password: string): Promise<any> {
+    throw new Error('SupabaseService is a stub. Use AuthService instead.');
+  }
 
-        this.loadSession();
-    }
+  async signOut(): Promise<void> {
+    throw new Error('SupabaseService is a stub. Use AuthService instead.');
+  }
 
-    private async loadSession() {
-        const { data } = await this.supabase.auth.getSession();
-        if (data.session?.user) {
-            this.currentUserSubject.next(data.session.user);
-        }
+  async getSession(): Promise<any> {
+    return null;
+  }
 
-        // Mark session as loaded
-        this.sessionLoadedSubject.next(true);
-
-        this.supabase.auth.onAuthStateChange((event, session) => {
-            this.currentUserSubject.next(session?.user ?? null);
-        });
-    }
-
-    /**
-     * Returns an observable that waits for session to load, then emits the current user
-     */
-    currentUserAfterLoad$(): Observable<User | null> {
-        return this.sessionLoaded$.pipe(
-            filter(loaded => loaded),
-            take(1),
-            switchMap(() => this.currentUser$.pipe(take(1)))
-        );
-    }
-
-    async signUp(email: string, password: string, name: string) {
-        const { data, error } = await this.supabase.auth.signUp({
-            email,
-            password,
-            options: {
-                data: {
-                    name: name
-                }
-            }
-        });
-        if (error) throw error;
-        return data;
-    }
-
-    async signIn(email: string, password: string) {
-        const { data, error } = await this.supabase.auth.signInWithPassword({
-            email,
-            password
-        });
-
-        if (error) throw error;
-        return data;
-    }
-
-    async signOut() {
-        const { error } = await this.supabase.auth.signOut();
-        if (error) throw error;
-    }
-
-    async getSession(): Promise<Session | null> {
-        const { data } = await this.supabase.auth.getSession();
-        return data.session;
-    }
-
-    async getAccessToken(): Promise<string | null> {
-        const session = await this.getSession();
-        return session?.access_token ?? null;
-    }
-
-    getCurrentUser(): User | null {
-        return this.currentUserSubject.value;
-    }
+  async getAccessToken(): Promise<string | null> {
+    return null;
+  }
 }

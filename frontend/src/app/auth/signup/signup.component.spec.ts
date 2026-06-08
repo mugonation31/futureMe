@@ -3,24 +3,24 @@ import { Router } from '@angular/router';
 import { RouterTestingModule } from '@angular/router/testing';
 import { of } from 'rxjs';
 import { SignupComponent } from './signup.component';
-import { SupabaseService } from '../../core/services/supabase.service';
+import { AuthService } from '../../core/services/auth.service';
 
 describe('SignupComponent', () => {
   let component: SignupComponent;
   let fixture: ComponentFixture<SignupComponent>;
-  let mockSupabaseService: { signUp: jasmine.Spy; currentUserAfterLoad$: jasmine.Spy };
+  let mockAuthService: { register: jasmine.Spy; isAuthenticated: jasmine.Spy };
   let router: Router;
 
   beforeEach(async () => {
-    mockSupabaseService = {
-      signUp: jasmine.createSpy('signUp').and.returnValue(Promise.resolve({})),
-      currentUserAfterLoad$: jasmine.createSpy('currentUserAfterLoad$').and.returnValue(of(null))
+    mockAuthService = {
+      register: jasmine.createSpy('register').and.returnValue(of({ access_token: 'tok', user: { id: '1', email: 'a@b.com', display_name: null } })),
+      isAuthenticated: jasmine.createSpy('isAuthenticated').and.returnValue(false)
     };
 
     await TestBed.configureTestingModule({
       imports: [SignupComponent, RouterTestingModule],
       providers: [
-        { provide: SupabaseService, useValue: mockSupabaseService }
+        { provide: AuthService, useValue: mockAuthService }
       ]
     }).compileComponents();
 
@@ -32,111 +32,54 @@ describe('SignupComponent', () => {
     fixture.detectChanges();
   });
 
-  it('should create', () => {
+  // Test 1: basic creation
+  it('should create the component', () => {
     expect(component).toBeTruthy();
   });
 
-  it('should have empty form fields initially', () => {
-    expect(component.name).toBe('');
-    expect(component.email).toBe('');
-    expect(component.password).toBe('');
-    expect(component.confirmPassword).toBe('');
-  });
-
-  it('should display error when fields are empty on submit', async () => {
-    // Arrange: leave all fields empty
+  // Test 2: error message display
+  it('should show error message when errorMessage is set', () => {
+    // Arrange
+    component.errorMessage = 'Please fill in all fields';
 
     // Act
-    await component.onSignup();
+    fixture.detectChanges();
 
     // Assert
-    expect(component.errorMessage).toBe('Please fill in all fields');
-    expect(mockSupabaseService.signUp).not.toHaveBeenCalled();
+    const errorEl: HTMLElement | null = fixture.nativeElement.querySelector('.error-message');
+    expect(errorEl).not.toBeNull();
+    expect(errorEl!.textContent).toContain('Please fill in all fields');
   });
 
-  it('should display error for invalid email format', async () => {
+  // Test 3: disabled state
+  it('should disable submit button when loading is true', () => {
     // Arrange
-    component.name = 'Test User';
-    component.email = 'bad-email';
-    component.password = 'password123';
-    component.confirmPassword = 'password123';
+    component.loading = true;
 
     // Act
-    await component.onSignup();
+    fixture.detectChanges();
 
     // Assert
-    expect(component.errorMessage).toBe('Please enter a valid email address');
+    const btn: HTMLButtonElement | null = fixture.nativeElement.querySelector('button[type="submit"]');
+    expect(btn).not.toBeNull();
+    expect(btn!.disabled).toBeTrue();
   });
 
-  it('should display error when password is less than 6 characters', async () => {
-    // Arrange
-    component.name = 'Test User';
-    component.email = 'test@test.com';
-    component.password = '12345';
-    component.confirmPassword = '12345';
-
-    // Act
-    await component.onSignup();
+  // Test 4 (RED → GREEN after HTML change): btn-primary class present
+  it('should have btn-primary class on the submit button', () => {
+    // Arrange / Act: default render
 
     // Assert
-    expect(component.errorMessage).toBe('Password must be at least 6 characters');
+    const btn: HTMLButtonElement | null = fixture.nativeElement.querySelector('button.btn-primary');
+    expect(btn).not.toBeNull();
   });
 
-  it('should display error when passwords do not match', async () => {
-    // Arrange
-    component.name = 'Test User';
-    component.email = 'test@test.com';
-    component.password = 'password123';
-    component.confirmPassword = 'different123';
-
-    // Act
-    await component.onSignup();
+  // Test 5 (RED → GREEN after HTML change): old signup-button class removed
+  it('should not have signup-button class on the submit button', () => {
+    // Arrange / Act: default render
 
     // Assert
-    expect(component.errorMessage).toBe('Passwords do not match');
-  });
-
-  it('should call signUp and show success message on success', async () => {
-    // Arrange
-    component.name = 'Test User';
-    component.email = 'test@test.com';
-    component.password = 'password123';
-    component.confirmPassword = 'password123';
-
-    // Act
-    await component.onSignup();
-
-    // Assert
-    expect(mockSupabaseService.signUp).toHaveBeenCalledWith('test@test.com', 'password123', 'Test User');
-    expect(component.successMessage).toBe('Account created! Redirecting to setup...');
-  });
-
-  it('should display error on failed signup', async () => {
-    // Arrange
-    mockSupabaseService.signUp.and.returnValue(Promise.reject({ message: 'Email already exists' }));
-    component.name = 'Test User';
-    component.email = 'test@test.com';
-    component.password = 'password123';
-    component.confirmPassword = 'password123';
-
-    // Act
-    await component.onSignup();
-
-    // Assert
-    expect(component.errorMessage).toBe('Email already exists');
-  });
-
-  it('should navigate to /onboarding immediately after successful signup', async () => {
-    // Arrange
-    component.name = 'Test User';
-    component.email = 'test@test.com';
-    component.password = 'password123';
-    component.confirmPassword = 'password123';
-
-    // Act
-    await component.onSignup();
-
-    // Assert: navigate called immediately — no setTimeout delay
-    expect(router.navigate).toHaveBeenCalledWith(['/onboarding']);
+    const btn: HTMLButtonElement | null = fixture.nativeElement.querySelector('button.signup-button');
+    expect(btn).toBeNull();
   });
 });

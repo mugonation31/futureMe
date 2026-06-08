@@ -1,4 +1,5 @@
 <div class="signup-container">
+  <a routerLink="/" class="back-home"><span class="arrow">←</span><span>Back to home</span></a>
   <div class="signup-card">
     <!-- Page Title -->
     <h2>Create Account</h2>
@@ -68,19 +69,16 @@
         {{ errorMessage }}
       </div>
 
-      <!-- Success Message -->
-      <div class="success-message" *ngIf="successMessage">
-        {{ successMessage }}
-      </div>
-
       <!-- Submit Button -->
-      <button
-        type="submit"
-        class="signup-button"
-        [disabled]="loading"
-      >
-        {{ loading ? 'Creating account...' : 'Sign Up' }}
-      </button>
+      <div class="form-actions">
+        <button
+          type="submit"
+          class="btn-primary"
+          [disabled]="loading"
+        >
+          {{ loading ? 'Creating account...' : 'Sign Up' }}
+        </button>
+      </div>
     </form>
 
     <!-- Link to Login -->

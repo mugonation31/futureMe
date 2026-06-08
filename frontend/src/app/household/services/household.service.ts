@@ -1,7 +1,8 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { BehaviorSubject, Observable, from, switchMap, tap } from 'rxjs';
-import { SupabaseService } from '../../core/services/supabase.service';
+import { BehaviorSubject, Observable } from 'rxjs';
+import { tap } from 'rxjs/operators';
+import { AuthService } from '../../core/services/auth.service';
 import { environment } from '../../../environments/environment';
 
 export interface HouseholdPublic {
@@ -15,57 +16,50 @@ export interface Household extends HouseholdPublic {
   created_by: string;
 }
 
-@Injectable({
-  providedIn: 'root'
-})
+@Injectable({ providedIn: 'root' })
 export class HouseholdService {
   private http = inject(HttpClient);
-  private supabaseService = inject(SupabaseService);
+  private authService = inject(AuthService);
+  private readonly apiUrl = environment.apiUrl;
 
-  private apiUrl = environment.apiUrl;
   currentHousehold$ = new BehaviorSubject<HouseholdPublic | null>(null);
 
-  private async getAuthHeaders(): Promise<HttpHeaders> {
-    const token = await this.supabaseService.getAccessToken();
-    if (!token) throw new Error('No active session');
+  private getHeaders(): HttpHeaders {
+    const token = this.authService.getToken();
+    if (!token) throw new Error('Not authenticated');
     return new HttpHeaders({
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
+      'Authorization': `Bearer ${token}`,
     });
   }
 
   createHousehold(name: string): Observable<Household> {
-    return from(this.getAuthHeaders()).pipe(
-      switchMap(headers =>
-        this.http.post<Household>(`${this.apiUrl}/households`, { name }, { headers })
-      ),
-      tap(h => this.currentHousehold$.next(h))
-    );
+    return this.http.post<Household>(
+      `${this.apiUrl}/households`,
+      { name },
+      { headers: this.getHeaders() }
+    ).pipe(tap(h => this.currentHousehold$.next(h)));
   }
 
   getMyHousehold(): Observable<HouseholdPublic> {
-    return from(this.getAuthHeaders()).pipe(
-      switchMap(headers =>
-        this.http.get<HouseholdPublic>(`${this.apiUrl}/households/me`, { headers })
-      ),
-      tap(h => this.currentHousehold$.next(h))
-    );
+    return this.http.get<HouseholdPublic>(
+      `${this.apiUrl}/households/me`,
+      { headers: this.getHeaders() }
+    ).pipe(tap(h => this.currentHousehold$.next(h)));
   }
 
   getInviteCode(): Observable<Household> {
-    return from(this.getAuthHeaders()).pipe(
-      switchMap(headers =>
-        this.http.get<Household>(`${this.apiUrl}/households/invite-code`, { headers })
-      )
+    return this.http.get<Household>(
+      `${this.apiUrl}/households/invite-code`,
+      { headers: this.getHeaders() }
     );
   }
 
   joinHousehold(invite_code: string): Observable<HouseholdPublic> {
-    return from(this.getAuthHeaders()).pipe(
-      switchMap(headers =>
-        this.http.post<HouseholdPublic>(`${this.apiUrl}/households/join`, { invite_code }, { headers })
-      ),
-      tap(h => this.currentHousehold$.next(h))
-    );
+    return this.http.post<HouseholdPublic>(
+      `${this.apiUrl}/households/join`,
+      { invite_code },
+      { headers: this.getHeaders() }
+    ).pipe(tap(h => this.currentHousehold$.next(h)));
   }
 }
