@@ -12,7 +12,7 @@ MIGRATION_PATH = os.path.normpath(os.path.join(
     os.path.dirname(__file__),  # backend/tests/
     "..",                        # backend/
     "..",                        # project root
-    "supabase",
+    "migrations",
     "migrations",
     "20260608000007_password_reset_tokens.sql",
 ))

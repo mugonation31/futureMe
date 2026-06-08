@@ -1,14 +1,14 @@
 import { TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { SettingsService } from './settings.service';
-import { SupabaseService } from '../../core/services/supabase.service';
+import { AuthService } from '../../core/services/auth.service';
 import { CompanySettings } from '../models/settings.model';
 import { environment } from '../../../environments/environment';
 
 describe('SettingsService', () => {
   let service: SettingsService;
   let httpMock: HttpTestingController;
-  let mockSupabaseService: { getAccessToken: jasmine.Spy };
+  let mockAuthService: { getToken: jasmine.Spy };
 
   const mockSettings: CompanySettings = {
     id: 'settings-123',
@@ -26,15 +26,15 @@ describe('SettingsService', () => {
   };
 
   beforeEach(() => {
-    mockSupabaseService = {
-      getAccessToken: jasmine.createSpy('getAccessToken').and.returnValue(Promise.resolve('fake-token'))
+    mockAuthService = {
+      getToken: jasmine.createSpy('getToken').and.returnValue('fake-token')
     };
 
     TestBed.configureTestingModule({
       imports: [HttpClientTestingModule],
       providers: [
         SettingsService,
-        { provide: SupabaseService, useValue: mockSupabaseService }
+        { provide: AuthService, useValue: mockAuthService }
       ]
     });
 
@@ -46,22 +46,17 @@ describe('SettingsService', () => {
     httpMock.verify();
   });
 
-  // Test 5: apiUrl must equal environment.apiUrl exactly (no http:// fallback)
   it('should use environment.apiUrl directly without a fallback', () => {
-    // Arrange & Act: access the private field via bracket notation
     const apiUrl = (service as any)['apiUrl'];
 
-    // Assert: must equal exactly what environment provides, not a hardcoded fallback
     expect(apiUrl).toBe(environment.apiUrl);
     expect(apiUrl).not.toContain('localhost:8000');
   });
 
-  // Test 6: should be created
   it('should be created', () => {
     expect(service).toBeTruthy();
   });
 
-  // Test 7: should call GET /api/settings with auth headers
   it('should call GET /api/settings with auth headers on getSettings()', (done: DoneFn) => {
     service.getSettings().subscribe(settings => {
       expect(settings).toEqual(mockSettings);
@@ -76,7 +71,6 @@ describe('SettingsService', () => {
     });
   });
 
-  // Test 8: should call PUT /api/settings with settings data
   it('should call PUT /api/settings with settings data on updateSettings()', (done: DoneFn) => {
     const updateData: Partial<CompanySettings> = {
       company_name: 'Updated Company',

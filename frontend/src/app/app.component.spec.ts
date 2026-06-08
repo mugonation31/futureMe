@@ -2,19 +2,21 @@ import { TestBed } from '@angular/core/testing';
 import { RouterTestingModule } from '@angular/router/testing';
 import { BehaviorSubject } from 'rxjs';
 import { AppComponent } from './app.component';
-import { SupabaseService } from './core/services/supabase.service';
+import { AuthService } from './core/services/auth.service';
 
 describe('AppComponent', () => {
   beforeEach(async () => {
-    const mockSupabaseService = {
+    const mockAuthService = {
       currentUser$: new BehaviorSubject(null),
-      signOut: jasmine.createSpy('signOut')
+      logout: jasmine.createSpy('logout'),
+      getToken: jasmine.createSpy('getToken').and.returnValue(null),
+      isAuthenticated: jasmine.createSpy('isAuthenticated').and.returnValue(false),
     };
 
     await TestBed.configureTestingModule({
       imports: [AppComponent, RouterTestingModule],
       providers: [
-        { provide: SupabaseService, useValue: mockSupabaseService }
+        { provide: AuthService, useValue: mockAuthService }
       ]
     }).compileComponents();
   });

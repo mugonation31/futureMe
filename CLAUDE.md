@@ -1,14 +1,14 @@
-# Invoice Me
+# Future Me
 
-Full-stack invoice management SaaS built with FastAPI + Angular + Supabase.
+Full-stack personal finance app built with FastAPI + Angular + Neon PostgreSQL.
 
 ## Tech Stack
 
 - **Backend:** Python 3.11, FastAPI 0.109, asyncpg, Pydantic 2.5
 - **Frontend:** Angular 17.3 (standalone components), TypeScript 5.4, SCSS
-- **Database:** PostgreSQL via Supabase (RLS enabled on all tables)
+- **Database:** PostgreSQL via Neon (RLS enabled on all tables)
 - **Services:** ReportLab (PDF), Resend (email), APScheduler (scheduling)
-- **Auth:** Supabase Auth with ES256 JWT verification
+- **Auth:** Custom JWT (HS256) via AuthService
 - **Infra:** Docker Compose, Nginx
 
 ## Quick Start
@@ -63,12 +63,12 @@ frontend/src/app/
 ├── schedules/         # Recurring invoice schedules
 ├── settings/          # Company/payment settings
 ├── dashboard/         # Stats + recent invoices
-├── core/              # Singleton services (auth, api, supabase)
+├── core/              # Singleton services (auth, api)
 ├── shared/            # Reusable components
 ├── app.routes.ts      # Route definitions
 └── app.config.ts      # App providers
 
-supabase/migrations/   # SQL migrations (RLS, triggers, indexes)
+migrations/            # SQL migrations (schema, RLS, triggers, indexes)
 ```
 
 ## API Endpoints
@@ -93,8 +93,8 @@ All prefixed with `/api/` except `/health`:
 ## Environment Variables
 
 Backend requires (see `backend/.env.example`):
-- `SUPABASE_URL`, `SUPABASE_JWT_SECRET` — auth
-- `DATABASE_URL` — PostgreSQL connection string
+- `JWT_SECRET` — HS256 signing secret (min 32 chars)
+- `DATABASE_URL` — Neon PostgreSQL connection string (`sslmode=require`)
 - `CORS_ORIGINS` — allowed origins (comma-separated)
 - `RESEND_API_KEY`, `RESEND_FROM_EMAIL` — email
 - `ENVIRONMENT` — `development` or `production`

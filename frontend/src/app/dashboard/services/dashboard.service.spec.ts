@@ -1,24 +1,24 @@
 import { TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { DashboardService } from './dashboard.service';
-import { SupabaseService } from '../../core/services/supabase.service';
+import { AuthService } from '../../core/services/auth.service';
 import { environment } from '../../../environments/environment';
 
 describe('DashboardService', () => {
   let service: DashboardService;
   let httpMock: HttpTestingController;
-  let mockSupabaseService: { getAccessToken: jasmine.Spy };
+  let mockAuthService: { getToken: jasmine.Spy };
 
   beforeEach(() => {
-    mockSupabaseService = {
-      getAccessToken: jasmine.createSpy('getAccessToken').and.returnValue(Promise.resolve('fake-token'))
+    mockAuthService = {
+      getToken: jasmine.createSpy('getToken').and.returnValue('fake-token')
     };
 
     TestBed.configureTestingModule({
       imports: [HttpClientTestingModule],
       providers: [
         DashboardService,
-        { provide: SupabaseService, useValue: mockSupabaseService }
+        { provide: AuthService, useValue: mockAuthService }
       ]
     });
 
@@ -50,22 +50,17 @@ describe('DashboardService', () => {
     ]
   };
 
-  // Test 3: apiUrl must equal environment.apiUrl exactly (no http:// fallback)
   it('should use environment.apiUrl directly without a fallback', () => {
-    // Arrange & Act: access the private field via bracket notation
     const apiUrl = (service as any)['apiUrl'];
 
-    // Assert: must equal exactly what environment provides, not a hardcoded fallback
     expect(apiUrl).toBe(environment.apiUrl);
     expect(apiUrl).not.toContain('localhost:8000');
   });
 
-  // Test 4: should be created
   it('should be created', () => {
     expect(service).toBeTruthy();
   });
 
-  // Test 5: should call GET /api/dashboard with auth headers on getStats()
   it('should call GET /api/dashboard with auth headers on getStats()', (done: DoneFn) => {
     service.getStats().subscribe(stats => {
       expect(stats).toEqual(mockStats as any);
