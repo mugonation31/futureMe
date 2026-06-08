@@ -21,3 +21,143 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 **Tags:** database, migrations, code-review, backend
 
 ---
+
+## 2026-06-08 — Tasks 21–23: transaction/category backend (TDD agent prompts, SQL safety, query param validation)
+
+**What happened:** A vague TDD agent prompt ("implement tasks 21-23") caused the agent to write tests for the wrong feature (households) and declare success without writing new code. A second prompt that listed exact function signatures, file names, and a numbered test list succeeded on the first run.
+**Why:** Without precise scope, the agent pattern-matched on recent context (households) rather than the intended feature (transactions). Specificity is the only reliable countermeasure.
+**Next time:** TDD agent prompts for this project must include: the exact function names to implement, the file each belongs to, and a numbered list of test cases. "Implement task N" is never sufficient — always expand to function-level detail.
+**Tags:** testing, tdd, agents, process
+
+---
+
+**What happened:** The `update_transaction` DB function used `model_dump(exclude_unset=True)` to build a dynamic SET clause without an allowlist. This is safe today because Pydantic field names match column names, but schema drift or a future computed field could silently introduce identifier injection.
+**Why:** It is easy to treat Pydantic-sourced keys as inherently safe. They are safe against user-supplied injection, but not against schema drift or accidental field additions.
+**Next time:** Any dynamic SQL SET-clause builder in `database.py` must declare `_ALLOWED_FIELDS = {frozenset of column names}` before the loop and skip any key not in the set. This costs two lines and eliminates the class of bug permanently.
+**Tags:** security, database, sql, backend
+
+---
+
+**What happened:** The `month` query param (`?month=YYYY-MM`) was accepted as a raw, unvalidated string. A garbage value caused Postgres to throw a 500 instead of a clean 422.
+**Why:** FastAPI does not validate string query params unless a pattern or type constraint is declared. The validation gap was only visible at the DB layer, which surfaces it as a server error rather than a client error.
+**Next time:** Any query param that is passed into a SQL statement must be validated at the FastAPI layer. For `month`: `Query(None, pattern=r"^\d{4}-\d{2}$")`. This returns 422 before the DB call is made.
+**Tags:** api, validation, fastapi, backend
+
+---
+
+**What happened:** Deferred security items (JWT lifetime, refresh tokens, password complexity, CategoryCreate color validation, CORS restrictions) were noted during the dev cycle but not added to PLAN.md, leaving them untracked and at risk of being forgotten permanently.
+**Why:** Security deferrals feel low-priority in the moment and get noted in discussion but never written down as tasks.
+**Next time:** Any security item that is explicitly deferred ("we will fix this later") must be added to PLAN.md as a task before the end of the dev cycle. If it is not in PLAN.md it does not exist.
+**Tags:** security, process, planning, workflow
+
+---
+
+## 2026-06-08 — Replacing Supabase Auth with custom auth (users table + bcrypt + HS256 JWT)
+
+**What happened:** Moving from Supabase Auth to a self-hosted Neon Postgres required a full custom auth implementation: a `users` table (uuid PK, email, password_hash, display_name), bcrypt hashing via `passlib[bcrypt]`, and HS256 JWT signing with `pyjwt`. The config field also changed from `SUPABASE_JWT_SECRET` to `JWT_SECRET`, which silently invalidates any previously issued tokens and breaks the frontend Angular `AuthService` if it expects a different payload shape.
+**Why:** Supabase Auth is a separate service — removing it means the backend must take over every responsibility it provided: credential storage, password hashing, token issuance, and token verification. None of this is wired automatically.
+**Next time:** When migrating off Supabase Auth on this project, the full checklist is: (1) add `users` migration with bcrypt-ready `password_hash` column; (2) add `create_user` / `get_user_by_email` / `verify_password` to `database.py`; (3) add `_create_access_token` helper to `main.py` with `sub`, `email`, `display_name`, `exp` claims; (4) update `config.py` to replace `supabase_jwt_secret` with `jwt_secret`; (5) update Angular `AuthService` to decode the new payload shape; (6) clear `localStorage` tokens in the browser — old Supabase tokens will fail verification immediately.
+**Tags:** auth, database, migrations, backend
+
+---
+
+## 2026-06-08 — Transaction PATCH/DELETE: fetch record first, then check creator-vs-owner-role
+
+**What happened:** The PATCH and DELETE endpoints for transactions use a two-step authorization pattern: fetch the record scoped to `household_id`, return 404 if absent, then check if the requester is the creator (`user_id` match). If not, fetch the requester's household role and allow only if `role == 'owner'`. Skipping the fetch-first step makes it impossible to distinguish "record not found" from "record exists but you can't touch it", leaking existence information.
+**Why:** The household scoping (`WHERE household_id = $1`) already prevents cross-household reads, but within a household a member can see all transactions while only being allowed to mutate their own. Without the creator check, any household member could edit or delete any other member's transaction.
+**Next time:** For any resource that is scoped to a group (household) but owned by an individual (user_id), follow this pattern exactly: `get_<resource>(household_id, resource_id)` → 404 if missing → compare `existing["user_id"] == context.user_id` → if mismatch, fetch role → 403 if not owner. Do not skip the fetch or combine the 404/403 checks.
+**Tags:** auth, api, backend, security
+
+---
+
+## 2026-06-08 — Task 38: DB migration for `password_reset_tokens` table
+
+**What happened:** The migration added a UNIQUE constraint on `token_hash` and then immediately added a separate `CREATE INDEX` on the same column. The index was completely redundant — PostgreSQL automatically creates a B-tree index to enforce every UNIQUE constraint.
+**Why:** It is easy to write the index by habit without remembering that UNIQUE already implies one. The duplicate does not cause a failure but doubles write overhead on every insert/update to that column.
+**Next time:** When writing a migration, do not add a `CREATE INDEX` for any column that already has a `UNIQUE` constraint (or `PRIMARY KEY`). As a quick check: if the column appears in a `UNIQUE` or `PRIMARY KEY` clause, the index is already there.
+**Tags:** database, migrations, postgres, performance
+
+---
+
+**What happened:** Migration tests used the loose assertion pattern `"keyword" in sql and "table_name" in sql` to verify schema structure. These two substring checks can be satisfied by completely unrelated parts of the SQL file, producing false-positive test results.
+**Why:** It feels intuitive to check that both words appear somewhere in the file, but SQL files contain many keywords and table names across multiple statements — the two checks are almost never coupled.
+**Next time:** Always use `re.search` with a pattern that captures the actual SQL structure, e.g. `re.search(r"UNIQUE\s*\(\s*token_hash\s*\)", sql, re.IGNORECASE)`. The pattern must require both tokens to appear in the right relationship, not just somewhere in the file.
+**Tags:** testing, database, migrations, assertions
+
+---
+
+## 2026-06-08 — Task 39: password reset flow (async SDK, TOCTOU, purpose-claim, anti-enumeration, config defaults)
+
+**What happened:** The Resend SDK ships both `resend.Emails.send` (sync) and `resend.Emails.send_async`. The sync variant was used inside an `async def` endpoint, blocking the entire FastAPI event loop for the full HTTP round-trip.
+**Why:** It is easy to assume that a method called from an async function is safe — the SDK doesn't raise, it just blocks. The async variant requires explicitly choosing the `_async` method name.
+**Next time:** Before calling any third-party SDK method from an `async def`, check whether an async variant exists. For Resend in this project: always use `resend.Emails.send_async(...)`. Search for `send(` in `email_service.py` whenever the Resend version is bumped.
+**Tags:** async, email, backend, fastapi
+
+---
+
+**What happened:** The password-reset handler issued two separate awaited DB calls — update the password, then invalidate the token. A crash between the two would leave the token valid against the new password.
+**Why:** The two writes were written sequentially without wrapping them in a transaction, so they were not atomic.
+**Next time:** Any pair of writes that must both succeed or both fail for security correctness must be wrapped in a single `async with conn.transaction():` block in `database.py`. This applies especially to: reset-token invalidation + credential update, and any other security-critical multi-step write.
+**Tags:** database, security, backend, auth
+
+---
+
+**What happened:** A password-reset JWT signed with the same secret as session tokens passed `jwt.decode()` unchanged and was accepted as a valid session credential, because `verify_token` did not check the `purpose` claim.
+**Why:** The signature check only proves the token was signed by us — it does not prove the token is being used in the correct context. A non-null `purpose` claim is invisible to a decoder that only checks the signature and expiry.
+**Next time:** `verify_token` in `auth.py` must explicitly reject any token whose decoded payload contains a `purpose` key (or assert `purpose is None`). Add this check immediately after `jwt.decode()`. Any token intended for a specific flow (password reset, email verify, invite) must be validated only in its dedicated endpoint and rejected everywhere else.
+**Tags:** auth, security, jwt, backend
+
+---
+
+**What happened:** The forgot-password endpoint swallowed exceptions only in the "user not found" branch. Any uncaught exception in the "user exists" branch (Resend API down, DB write fails) escaped as a 500, creating a side-channel: registered emails returned 500, unknown emails returned 200.
+**Why:** Anti-enumeration was applied to the response status code, not to the entire code path. Exception handling was not part of the security model.
+**Next time:** The forgot-password endpoint must wrap the entire "user exists" block — including the DB token write and the Resend call — in a `try/except Exception`. Log the error internally, swallow it externally, and always return 200 with the same body. The invariant is: no observable difference between a registered and an unregistered email, including error states.
+**Tags:** security, auth, api, anti-enumeration
+
+---
+
+**What happened:** `config.py` had `resend_api_key: str = "placeholder"`. The app started cleanly with no Resend key configured, silently failing to send any email at runtime.
+**Why:** A placeholder default was added so the app could start without a `.env` file during development. The cost was that missing-key failures became invisible until the feature was exercised at runtime.
+**Next time:** Required integration keys (`resend_api_key`, `jwt_secret`, `database_url`) must have no default — `resend_api_key: str` with no `= ...`. Pydantic will raise `ValidationError` at startup if the env var is absent, surfacing the problem at boot time rather than silently at the point of use.
+**Tags:** config, backend, reliability, security
+
+---
+
+## 2026-06-08 — Task 40: anti-enumeration, TDD refactor coverage, TestBed isolation, E2E selectors
+
+**What happened:** The forgot-password and reset-password Angular components used `err.error?.detail` to display error messages — directly reflecting the API response body. This defeats the backend's anti-enumeration design: the server always returns the same response, but the frontend surfaced the real server state to the user.
+**Why:** Anti-enumeration was treated as a backend responsibility. Frontend error handlers defaulted to "use what the API returns", which is the normal pattern for non-security endpoints — but is exactly wrong for auth enumeration-sensitive flows.
+**Next time:** Auth error handlers (forgot-password, reset-password, login) must use hardcoded strings only. Never use `err.error?.detail` or any server response body in these components. For reset-password, map solely on status code: `err.status === 400 ? 'Link invalid or expired' : 'Something went wrong'`. Review all auth component error handlers as a checklist item when implementing the frontend of any auth flow.
+**Tags:** security, auth, anti-enumeration, frontend
+
+---
+
+**What happened:** A TDD refactor of the login component spec replaced all core behaviour tests (navigate-to-dashboard, navigate-to-onboarding, show-error-on-failure) with CSS class assertions. The spec looked green and complete but covered a smaller, lower-value surface than before.
+**Why:** When a spec is touched as part of a feature implementation, it is natural to restructure it for the new feature — but easy to accidentally remove coverage for the original flows while doing so.
+**Next time:** Whenever a spec file is modified as part of a new feature, count the test cases before and after and verify the existing flows (navigation, error display, service call assertions) are still present. CSS class assertions are lower value than behaviour assertions and must not replace them.
+**Tags:** testing, tdd, coverage, angular
+
+---
+
+**What happened:** A test called `TestBed.resetTestingModule()` inside an `it()` block to reconfigure providers (different query params). This caused subsequent tests in the same suite to inherit contaminated module state, producing failures that were hard to diagnose.
+**Why:** `resetTestingModule()` is designed for use in `afterEach` cleanup, not mid-test reconfiguration. Calling it inside `it()` tears down the module mid-suite, affecting everything that runs after it in Karma.
+**Next time:** Never call `TestBed.resetTestingModule()` inside an `it()` block. Tests that require a different provider configuration (e.g. a route with different query params) must be in their own `describe` block with their own `beforeEach` and `TestBed.configureTestingModule` call.
+**Tags:** testing, angular, karma, test-isolation
+
+---
+
+**What happened:** Three E2E selectors in a page object written before the component existed were wrong when the component was finally built — the card class, the heading text, and the token-error div class all differed from the stubs used as placeholders.
+**Why:** Page objects are often written from a spec or design doc, not from rendered HTML. Placeholder selectors feel complete but are guesses until the actual component exists.
+**Next time:** Before un-skipping any E2E test that was written against a pre-existing stub, read the actual rendered HTML and verify every locator in the page object — class names, text strings, ARIA roles — against the live component. Do not trust any selector that was written before the component existed.
+**Tags:** e2e, playwright, page-objects, selectors
+
+---
+
+## 2026-06-08 — TS4114: `noImplicitOverride` is enabled and applies to E2E page objects
+
+**What happened:** Page-object subclasses (`LoginPage`, `SignupPage`) defined a `goto()` method that overrides `BasePage.goto()` without the `override` keyword. The TypeScript compiler emitted TS4114 ("This member must have an 'override' modifier because it overrides a member in the base class 'BasePage'"). The error only surfaced when the page objects were compiled together, not during initial authoring.
+**Why:** `tsconfig.json` has `"noImplicitOverride": true`. This flag is not part of the default `"strict": true` bundle — it is a separate, less commonly known option that was explicitly added. Developers writing subclasses by hand often omit `override` because most TypeScript projects don't require it.
+**Next time:** When adding any method to an E2E page-object class that extends `BasePage`, check whether the method name matches any method on `BasePage` and if so, prefix it with `override`. Run `tsc --noEmit` from `frontend/` to catch TS4114 errors before committing.
+**Tags:** typescript, e2e, testing, page-objects
+
+---

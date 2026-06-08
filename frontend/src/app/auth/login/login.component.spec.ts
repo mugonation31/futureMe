@@ -1,22 +1,22 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { RouterTestingModule } from '@angular/router/testing';
 import { of, throwError } from 'rxjs';
 import { LoginComponent } from './login.component';
-import { SupabaseService } from '../../core/services/supabase.service';
+import { AuthService } from '../../core/services/auth.service';
 import { HouseholdService } from '../../household/services/household.service';
 
 describe('LoginComponent', () => {
   let component: LoginComponent;
   let fixture: ComponentFixture<LoginComponent>;
-  let mockSupabaseService: { signIn: jasmine.Spy; currentUserAfterLoad$: jasmine.Spy };
+  let mockAuthService: { login: jasmine.Spy; isAuthenticated: jasmine.Spy };
   let mockHouseholdService: { getMyHousehold: jasmine.Spy };
   let router: Router;
 
   beforeEach(async () => {
-    mockSupabaseService = {
-      signIn: jasmine.createSpy('signIn').and.returnValue(Promise.resolve({})),
-      currentUserAfterLoad$: jasmine.createSpy('currentUserAfterLoad$').and.returnValue(of(null))
+    mockAuthService = {
+      login: jasmine.createSpy('login').and.returnValue(of({ access_token: 'tok', user: { id: '1', email: 'a@b.com', display_name: null } })),
+      isAuthenticated: jasmine.createSpy('isAuthenticated').and.returnValue(false)
     };
     mockHouseholdService = {
       getMyHousehold: jasmine.createSpy('getMyHousehold').and.returnValue(
@@ -27,8 +27,12 @@ describe('LoginComponent', () => {
     await TestBed.configureTestingModule({
       imports: [LoginComponent, RouterTestingModule],
       providers: [
-        { provide: SupabaseService, useValue: mockSupabaseService },
-        { provide: HouseholdService, useValue: mockHouseholdService }
+        { provide: AuthService, useValue: mockAuthService },
+        { provide: HouseholdService, useValue: mockHouseholdService },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { queryParamMap: { get: () => null } } }
+        }
       ]
     }).compileComponents();
 
@@ -40,94 +44,95 @@ describe('LoginComponent', () => {
     fixture.detectChanges();
   });
 
-  it('should create', () => {
+  // Test 1: basic creation
+  it('should create the component', () => {
     expect(component).toBeTruthy();
   });
 
-  it('should have empty email and password initially', () => {
-    expect(component.email).toBe('');
-    expect(component.password).toBe('');
-  });
-
-  it('should display error when fields are empty on submit', async () => {
-    // Arrange: leave fields empty
-    component.email = '';
-    component.password = '';
-
-    // Act
-    await component.onLogin();
-
-    // Assert
-    expect(component.errorMessage).toBe('Please enter email and password');
-    expect(mockSupabaseService.signIn).not.toHaveBeenCalled();
-  });
-
-  it('should display error for invalid email format', async () => {
-    // Arrange
-    component.email = 'not-an-email';
+  // Test 2: navigates to /dashboard on successful login when household exists
+  it('should navigate to /dashboard after successful login with household', async () => {
+    component.email = 'test@example.com';
     component.password = 'password123';
 
-    // Act
     await component.onLogin();
 
-    // Assert
-    expect(component.errorMessage).toBe('Please enter a valid email');
-    expect(mockSupabaseService.signIn).not.toHaveBeenCalled();
-  });
-
-  it('should call signIn and navigate to /dashboard on success', async () => {
-    // Arrange
-    component.email = 'test@test.com';
-    component.password = 'password123';
-
-    // Act
-    await component.onLogin();
-
-    // Assert
-    expect(mockSupabaseService.signIn).toHaveBeenCalledWith('test@test.com', 'password123');
+    expect(mockAuthService.login).toHaveBeenCalledWith('test@example.com', 'password123');
     expect(router.navigate).toHaveBeenCalledWith(['/dashboard']);
   });
 
-  it('should display error on failed login', async () => {
-    // Arrange
-    mockSupabaseService.signIn.and.returnValue(Promise.reject(new Error('Invalid credentials')));
-    component.email = 'test@test.com';
-    component.password = 'wrongpassword';
+  // Test 3: navigates to /onboarding when household is not found
+  it('should navigate to /onboarding when household returns 404', async () => {
+    mockHouseholdService.getMyHousehold.and.returnValue(throwError(() => ({ status: 404 })));
+    component.email = 'test@example.com';
+    component.password = 'password123';
 
-    // Act
     await component.onLogin();
 
-    // Assert
+    expect(router.navigate).toHaveBeenCalledWith(['/onboarding']);
+  });
+
+  // Test 4: shows error message on failed login
+  it('should show error message on failed login', async () => {
+    mockAuthService.login.and.returnValue(throwError(() => new Error('Unauthorized')));
+    component.email = 'test@example.com';
+    component.password = 'wrongpassword';
+
+    await component.onLogin();
+
     expect(component.errorMessage).toBe('Invalid email or password');
   });
 
-  it('should navigate to /dashboard after login when user has a household', async () => {
-    // Arrange
-    component.email = 'test@test.com';
-    component.password = 'password123';
-    mockHouseholdService.getMyHousehold.and.returnValue(
-      of({ id: 'hh1', name: 'Test House', invite_code: 'abc', created_at: '', created_by: 'u1' })
-    );
+  // Test 5: disabled state
+  it('should disable submit button when loading is true', () => {
+    component.loading = true;
+    fixture.detectChanges();
 
-    // Act
-    await component.onLogin();
-
-    // Assert
-    expect(router.navigate).toHaveBeenCalledWith(['/dashboard']);
+    const btn: HTMLButtonElement | null = fixture.nativeElement.querySelector('button[type="submit"]');
+    expect(btn).not.toBeNull();
+    expect(btn!.disabled).toBeTrue();
   });
 
-  it('should navigate to /onboarding after login when user has no household', async () => {
-    // Arrange
-    component.email = 'test@test.com';
-    component.password = 'password123';
-    mockHouseholdService.getMyHousehold.and.returnValue(
-      throwError(() => ({ status: 404, message: 'Not found' }))
+  // Test 13: shows "Forgot password?" link
+  it('should show "Forgot password?" link', () => {
+    const links: NodeListOf<HTMLAnchorElement> = fixture.nativeElement.querySelectorAll('a');
+    const forgotLink = Array.from(links).find(
+      (a: HTMLAnchorElement) => a.textContent?.includes('Forgot password?')
     );
+    expect(forgotLink).not.toBeUndefined();
+  });
 
-    // Act
-    await component.onLogin();
+  // Test 15: does NOT show success banner when no query param
+  it('should NOT show success banner when no query param is present', () => {
+    const banner: HTMLElement | null = fixture.nativeElement.querySelector('.success-banner');
+    expect(banner).toBeNull();
+  });
+});
 
-    // Assert
-    expect(router.navigate).toHaveBeenCalledWith(['/onboarding']);
+// Test 14 in its own describe to avoid TestBed.resetTestingModule() inside it()
+describe('LoginComponent — reset=success banner', () => {
+  it('should show success banner when ?reset=success query param is present', async () => {
+    const mockAuth = {
+      login: jasmine.createSpy('login'),
+      isAuthenticated: jasmine.createSpy('isAuthenticated').and.returnValue(false)
+    };
+    const mockHousehold = { getMyHousehold: jasmine.createSpy('getMyHousehold') };
+
+    await TestBed.configureTestingModule({
+      imports: [LoginComponent, RouterTestingModule],
+      providers: [
+        { provide: AuthService, useValue: mockAuth },
+        { provide: HouseholdService, useValue: mockHousehold },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { queryParamMap: { get: (k: string) => k === 'reset' ? 'success' : null } } }
+        }
+      ]
+    }).compileComponents();
+
+    const f = TestBed.createComponent(LoginComponent);
+    f.detectChanges();
+
+    const banner: HTMLElement | null = f.nativeElement.querySelector('.success-banner');
+    expect(banner).not.toBeNull();
   });
 });

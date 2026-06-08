@@ -1,5 +1,7 @@
 # futureMe Design System
 
+> **Status note (2026-06-08): Tasks 1–18 are all complete.**
+
 ## Overview
 Foundation styling pass across 5 files. All tasks are implementation tasks.
 
@@ -253,3 +255,353 @@ Switch the project's PostgreSQL backend from Supabase-hosted Postgres to Neon. A
 - Neon pooler endpoint uses PgBouncer (transaction mode). If asyncpg uses prepared statements, use the non-pooler endpoint instead.
 - `gen_random_bytes` requires `pgcrypto` — available by default on Neon Postgres 14+, but verify before applying migration.
 - Real Neon credential must never appear in any committed file.
+
+---
+
+## Feature: Budgeting — Transactions, Categories, Live Dashboard
+
+### Overview
+
+Delivers the core budgeting loop: set a budget → log expenses/income with categories → see real spending vs budget on the dashboard. Tasks 1–18 are complete. New tasks start at 19.
+
+---
+
+- [ ] **Task 19 — DB migration: budget_categories and transactions tables** (Size: M)
+  - **Description**: Create `supabase/migrations/20260608000004_transactions.sql`. Define `budget_categories` (id uuid PK default gen_random_uuid(), household_id uuid REFERENCES households(id) ON DELETE CASCADE — nullable, name text NOT NULL, icon text, color text, is_default boolean DEFAULT false, created_at timestamptz DEFAULT now(), UNIQUE (household_id, name)). Define `transactions` (id uuid PK default gen_random_uuid(), household_id uuid NOT NULL REFERENCES households(id) ON DELETE CASCADE, user_id uuid NOT NULL, category_id uuid REFERENCES budget_categories(id) ON DELETE SET NULL, amount numeric(12,2) NOT NULL, type text NOT NULL CHECK (type IN ('expense','income')), description text, date date NOT NULL DEFAULT CURRENT_DATE, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()). Add `updated_at` trigger on `transactions` reusing existing `set_updated_at()`. Add index on `transactions(household_id, date DESC)`.
+  - **Depends on**: None (reuses `set_updated_at()` from migration 20260608000001)
+  - **Files**: `supabase/migrations/20260608000004_transactions.sql` (new)
+  - **Acceptance criteria**:
+    - Migration applies to Neon without error
+    - `budget_categories` and `transactions` tables exist with all columns and constraints
+    - `INSERT` into `transactions` auto-populates `updated_at` via trigger
+    - Index on `transactions(household_id, date DESC)` exists
+
+- [ ] **Task 20 — DB migration: seed default budget categories** (Size: S)
+  - **Description**: Create `supabase/migrations/20260608000005_seed_categories.sql`. Allow `budget_categories.household_id` to be NULL (already nullable from Task 19). Add a partial unique index `UNIQUE (name) WHERE household_id IS NULL` to prevent duplicate defaults. Insert 10 default rows with `household_id = NULL` and `is_default = true`: Groceries, Rent/Mortgage, Transport, Utilities, Dining Out, Entertainment, Healthcare, Clothing, Savings, Income.
+  - **Depends on**: Task 19
+  - **Files**: `supabase/migrations/20260608000005_seed_categories.sql` (new)
+  - **Acceptance criteria**:
+    - Migration applies without error
+    - `SELECT count(*) FROM budget_categories WHERE is_default = true` returns 10
+    - Inserting a duplicate default category name raises a unique constraint error
+    - `household_id` column accepts NULL
+
+- [ ] **Task 21 — Backend: Pydantic models for transactions and categories** (Size: S)
+  - **Description**: Add to `backend/models.py`: `CategoryCreate` (name: str, icon: Optional[str], color: Optional[str]); `CategoryResponse` (id, household_id, name, icon, color, is_default, created_at); `TransactionCreate` (amount: float ge=0.01, type: Literal['expense','income'], description: Optional[str], date: date, category_id: Optional[str]); `TransactionUpdate` (all fields Optional matching TransactionCreate); `TransactionResponse` (id, household_id, user_id, category_id, amount, type, description, date, created_at, updated_at, category_name: Optional[str]). Also add `CategorySpend` (category_name: str, spent: float, budget: Optional[float]) and extend `DashboardStats` with `category_breakdown: list[CategorySpend] = []`.
+  - **Depends on**: Task 19
+  - **Files**: `backend/models.py`
+  - **Acceptance criteria**:
+    - All new models importable from `models.py`
+    - `TransactionCreate.amount` rejects values <= 0
+    - `TransactionCreate.type` rejects values other than `'expense'` and `'income'`
+    - `DashboardStats` includes `category_breakdown` field defaulting to empty list
+    - No existing models removed or broken
+
+- [ ] **Task 22 — Backend: categories and transactions DB operations** (Size: M)
+  - **Description**: Add to `backend/database.py`: `get_categories(household_id: str) -> list[dict]` (returns rows where `household_id = $1 OR household_id IS NULL`); `create_category(household_id, name, icon, color) -> dict`; `create_transaction(household_id, user_id, data: TransactionCreate) -> dict` (joins category name on RETURNING); `get_transactions(household_id: str, month: Optional[str] = None) -> list[dict]` (month = 'YYYY-MM', joins category name, ordered by date DESC); `get_transaction(household_id, transaction_id) -> Optional[dict]`; `update_transaction(household_id, transaction_id, data: TransactionUpdate) -> dict`; `delete_transaction(household_id, transaction_id) -> bool`. Update `get_dashboard_stats(user_id, household_id)` to accept household_id and compute `total_spent` as `SUM(amount) WHERE type='expense' AND household_id=$hid AND date_trunc('month',date)=date_trunc('month',CURRENT_DATE)`, plus per-category breakdown via GROUP BY.
+  - **Depends on**: Task 21
+  - **Files**: `backend/database.py`
+  - **Acceptance criteria**:
+    - `get_categories` returns both default (household_id IS NULL) and household-specific rows
+    - `create_transaction` returns dict with `category_name` field populated
+    - `get_transactions` with `month='2026-06'` returns only June 2026 rows
+    - `get_dashboard_stats` returns real `total_spent` from `transactions` table
+    - All functions use `_serialize_row` and the `pool.acquire()` context-manager pattern
+
+- [ ] **Task 23 — Backend: categories and transactions API endpoints** (Size: M)
+  - **Description**: Add to `backend/main.py`: `GET /api/categories` (returns default + household categories; 403 if no household); `POST /api/categories` (creates custom category for household; 403 if no household); `GET /api/transactions` (query param `month=YYYY-MM` optional, scoped to household; 403 if no household); `POST /api/transactions` (creates transaction; 403 if no household); `GET /api/transactions/{id}` (403 if not household member); `PATCH /api/transactions/{id}` (403 unless `transaction.user_id == context.user_id` or role == 'owner'); `DELETE /api/transactions/{id}` (same ownership rule). Update `GET /api/dashboard` to pass `context.household_id` to `get_dashboard_stats`; return zeroed stats if `household_id` is None rather than raising 500.
+  - **Depends on**: Task 22
+  - **Files**: `backend/main.py`
+  - **Acceptance criteria**:
+    - `GET /api/categories` returns at least 10 default categories for any authenticated user
+    - `POST /api/transactions` with valid body returns HTTP 201 with `TransactionResponse`
+    - `GET /api/transactions?month=2026-06` returns only June 2026 transactions
+    - `PATCH /api/transactions/{id}` by a non-owning non-member user returns HTTP 403
+    - `GET /api/dashboard` returns non-zero `total_spent` after transactions exist
+    - Dashboard endpoint never returns 500 for a user without a household
+
+- [x] **Task 24 — Frontend: transaction and category models + service** (Size: S)
+  - **Description**: Create `frontend/src/app/transactions/models/transaction.model.ts` with interfaces: `Category` (id, household_id, name, icon, color, is_default); `Transaction` (id, household_id, user_id, category_id, amount, type, description, date, created_at, updated_at, category_name); `TransactionCreate` (amount, type, description, date, category_id). Create `frontend/src/app/transactions/services/transaction.service.ts` (Injectable, providedIn: 'root'). Methods: `getCategories(): Observable<Category[]>`; `getTransactions(month?: string): Observable<Transaction[]>`; `createTransaction(data: TransactionCreate): Observable<Transaction>`; `updateTransaction(id: string, data: Partial<TransactionCreate>): Observable<Transaction>`; `deleteTransaction(id: string): Observable<void>`. Use the same `getHeaders()` pattern used in `DashboardService` and `SettingsService`.
+  - **Depends on**: Task 23
+  - **Files**: `frontend/src/app/transactions/models/transaction.model.ts` (new), `frontend/src/app/transactions/services/transaction.service.ts` (new)
+  - **Acceptance criteria**:
+    - `TransactionService` is injectable and uses `AuthService.getToken()` for the auth header
+    - All five methods present and return typed Observables
+    - `Transaction` interface includes `category_name: string | null`
+    - No circular dependencies introduced
+
+- [x] **Task 25 — Frontend: transaction list page and inline add form** (Size: L)
+  - **Description**: Create `frontend/src/app/transactions/components/transaction-list/transaction-list.component.ts` (standalone). Renders a monthly transaction list with columns: date, description, category, amount (red for expense via `--caution`, green for income via `--positive`). Month selector `<select>` defaults to current month and re-fetches on change. "Add Transaction" button toggles an inline `TransactionFormComponent`. Create `frontend/src/app/transactions/components/transaction-form/transaction-form.component.ts` (standalone): reactive form with amount, type (expense/income), category (populated from `getCategories()`), description, date. On submit calls `createTransaction()`, emits `(saved)` output event, list refreshes. Each transaction row has a delete icon button calling `deleteTransaction()` after `confirm()`. Use `.card`, `.btn-primary`, `.btn-ghost` from global `styles.scss`. Register `/transactions` in `app.routes.ts` guarded by `authGuard` + `householdGuard`.
+  - **Depends on**: Task 24
+  - **Files**: `frontend/src/app/transactions/components/transaction-list/transaction-list.component.ts` (new), `frontend/src/app/transactions/components/transaction-list/transaction-list.component.html` (new), `frontend/src/app/transactions/components/transaction-list/transaction-list.component.scss` (new), `frontend/src/app/transactions/components/transaction-form/transaction-form.component.ts` (new), `frontend/src/app/transactions/components/transaction-form/transaction-form.component.html` (new), `frontend/src/app/transactions/components/transaction-form/transaction-form.component.scss` (new), `frontend/src/app/app.routes.ts`
+  - **Acceptance criteria**:
+    - `/transactions` is accessible to authenticated users with a household; redirects otherwise
+    - Transaction list renders all transactions for the selected month
+    - Changing the month selector re-fetches and re-renders
+    - Submitting the add form appends the new transaction to the list without full page reload
+    - Delete button removes the row after API call succeeds
+    - Expense amounts shown in `var(--caution)` colour, income in `var(--positive)`
+    - Form validates: amount > 0, type required, date required
+
+- [x] **Task 26 — Frontend: navigation link for transactions** (Size: S)
+  - **Description**: Add a "Transactions" `<a routerLink="/transactions" routerLinkActive="active">` nav link to `navigation.component.html` alongside the existing links. Ensure it appears both in the desktop nav row and in the mobile expanded menu.
+  - **Depends on**: Task 25
+  - **Files**: `frontend/src/app/shared/navigation/navigation.component.html`
+  - **Acceptance criteria**:
+    - "Transactions" link is visible in the desktop nav bar
+    - Link appears in the mobile hamburger menu
+    - Active route highlights the link via `routerLinkActive`
+    - No other nav links are broken
+
+- [ ] **Task 27 — Frontend + backend: dashboard with real spending data** (Size: M)
+  - **Description**: Extend `DashboardStats` in `backend/models.py` to include `category_breakdown: list[CategorySpend]` (already added in Task 21). Update `backend/database.get_dashboard_stats` to compute per-category spending with GROUP BY. Update `frontend/src/app/dashboard/services/dashboard.service.ts` `DashboardStats` interface to add `category_breakdown: CategorySpend[]`. Update `DashboardComponent` template to: (a) render a "Spending by category" section below the top four stat cards — one row per category with a progress bar and spent amount; (b) if `total_budget === 0`, show a CTA card linking to `/settings`; (c) if no transactions, show an empty state card linking to `/transactions`. Fix `remaining_budget` to floor at 0. Fix `savings_rate` to use `((total_budget - total_spent) / total_budget) * 100` when budget > 0, else 0.
+  - **Depends on**: Task 23, Task 25
+  - **Files**: `backend/models.py`, `backend/database.py`, `backend/main.py`, `frontend/src/app/dashboard/services/dashboard.service.ts`, `frontend/src/app/dashboard/components/dashboard/dashboard.component.ts`, `frontend/src/app/dashboard/components/dashboard/dashboard.component.html`, `frontend/src/app/dashboard/components/dashboard/dashboard.component.scss`
+  - **Acceptance criteria**:
+    - Dashboard `total_spent` reflects real sum of current-month expense transactions for the household
+    - `remaining_budget` never shows negative (floor at 0)
+    - `savings_rate` is 0 when no budget is set
+    - Category breakdown renders one row per category with transactions this month
+    - Each category row has a progress bar proportional to `spent / total_budget`
+    - Zero-budget state shows CTA linking to `/settings`
+    - Zero-transactions state shows empty state linking to `/transactions`
+
+- [ ] **Task 28 — Backend + frontend: settings end-to-end polish** (Size: S)
+  - **Description**: Fix two known gaps: (1) `backend/database.py` functions `get_user_settings` and `get_dashboard_stats` call `conn = await get_pool()` and use `conn` directly as a connection — replace with `async with pool.acquire() as conn` to be consistent and safe under concurrent load. (2) Frontend `SettingsService.updateSettings` currently sends the full form payload including null fields — filter out null/undefined values before sending so partial updates do not overwrite existing DB values with null. Add a 3-second auto-dismiss to the `successMessage` in `SettingsPageComponent` using `setTimeout`.
+  - **Depends on**: None
+  - **Files**: `backend/database.py`, `frontend/src/app/settings/services/settings.service.ts`, `frontend/src/app/settings/components/settings-page/settings-page.component.ts`
+  - **Acceptance criteria**:
+    - `GET /api/settings` no longer risks connection errors under load
+    - Saving only `display_name` does not overwrite `monthly_budget` with null in the DB
+    - Success message auto-dismisses after 3 seconds
+    - No regressions in existing settings tests
+
+- [ ] **Task 29 — Frontend: currency-aware formatting pipe** (Size: S)
+  - **Description**: Create `frontend/src/app/core/pipes/currency-format.pipe.ts` as a standalone Angular pipe (`appCurrency`). Injects `SettingsService`, reads current currency (GBP→£, USD→$, EUR→€, fallback to the code itself), and formats numbers as `symbol + value.toLocaleString(locale, {minimumFractionDigits:2, maximumFractionDigits:2})`. Returns `'--'` for null/undefined input. Replace the hardcoded `'£' + ...toLocaleString('en-GB', ...)` logic in `DashboardComponent.formatCurrency()` with this pipe. Apply the pipe to transaction amounts in `TransactionListComponent`.
+  - **Depends on**: Task 27, Task 25
+  - **Files**: `frontend/src/app/core/pipes/currency-format.pipe.ts` (new), `frontend/src/app/dashboard/components/dashboard/dashboard.component.ts`, `frontend/src/app/dashboard/components/dashboard/dashboard.component.html`, `frontend/src/app/transactions/components/transaction-list/transaction-list.component.html`
+  - **Acceptance criteria**:
+    - Changing currency to USD in settings causes dashboard and transaction list to show `$` prefix on next load
+    - Pipe returns `'--'` for null/undefined input
+    - Pipe is standalone and importable in any standalone component without module declaration
+    - No hardcoded `'£'` remains in `DashboardComponent`
+
+---
+
+## Risks
+
+- `get_dashboard_stats` currently ignores `household_id`. After Task 23 the signature changes — all callers in `main.py` must pass `context.household_id`. If `household_id` is None, return zeroed stats instead of raising 500.
+- The seed migration (Task 20) inserts NULL-FK rows in `budget_categories`. The `get_categories` query must use `WHERE household_id = $1 OR household_id IS NULL`, not an INNER JOIN that would exclude nulls.
+- Transaction edit/delete ownership check in Task 23 requires `transaction.user_id == context.user_id OR get_member_role() == 'owner'`. Both conditions require DB lookups — batch them or cache the role.
+- `TransactionFormComponent` renders inline rather than as a modal or separate route — keeps the slice shippable but may need revisiting based on UX feedback.
+
+## Open Questions
+
+- Should per-category budget allocations be in scope? Task 27 carries `budget: null` in `CategorySpend` but no UI to set per-category budgets. Recommend deferring to a dedicated "Budget Allocation" feature.
+- Should transactions be scoped to the household (all members see all) or to the individual user? Current plan scopes them to the household — confirm intended UX.
+- Should the month filter on the transactions page default to the current calendar month or show all time? Plan defaults to current month.
+
+---
+
+## Deferred Security Backlog
+
+Items explicitly deferred during the Tasks 21–23 dev cycle (2026-06-08). Must be completed before the first production deployment.
+
+- [ ] **SEC-1 — Shorten JWT access token lifetime and add refresh token endpoint** (Size: M)
+  - **Description**: Supabase issues JWTs with a 7-day lifetime. Shorten the access token lifetime to 15–60 minutes (configurable via `SUPABASE_JWT_EXPIRY` env var). Add a `POST /api/auth/refresh` endpoint that accepts a refresh token and returns a new access token. Frontend must handle 401 responses by attempting a silent refresh before redirecting to login.
+  - **Files**: `backend/auth.py`, `backend/main.py`, `frontend/src/app/core/services/auth.service.ts`
+  - **Acceptance criteria**:
+    - Access tokens expire in ≤ 60 minutes
+    - A valid refresh token returns a new access token without requiring re-login
+    - Expired access token mid-session triggers a silent refresh, not an immediate logout
+
+- [ ] **SEC-2 — Password complexity validation on signup** (Size: S)
+  - **Description**: Add server-side and client-side validation requiring passwords to contain at least 1 digit and 1 special character (in addition to existing length check). Return a clear 422 error message listing the unmet requirements so the frontend can display them inline.
+  - **Files**: `backend/main.py` (or `auth.py`), `frontend/src/app/auth/signup/signup.component.ts`
+  - **Acceptance criteria**:
+    - Signup with a password lacking a digit returns HTTP 422 with a descriptive message
+    - Signup with a password lacking a special character returns HTTP 422
+    - Frontend signup form shows inline errors before submission
+
+- [ ] **SEC-3 — Enforce `#RRGGBB` hex format on `CategoryCreate.color`** (Size: S)
+  - **Description**: Add a Pydantic `field_validator` on `CategoryCreate.color` to reject values that do not match `^#[0-9A-Fa-f]{6}$`. Also validate `icon` against an allowlist of known icon names if one is defined, or at minimum enforce a max-length to prevent oversized payloads. Return 422 with a clear message on violation.
+  - **Files**: `backend/models.py`
+  - **Acceptance criteria**:
+    - `POST /api/categories` with `color: "red"` returns HTTP 422
+    - `POST /api/categories` with `color: "#FF5733"` is accepted
+    - Existing category creation tests continue to pass
+
+- [ ] **SEC-4 — Tighten CORS configuration** (Size: S)
+  - **Description**: Replace the current wildcard or broad CORS setup with an explicit allowlist. Restrict `allow_methods` to `["GET", "POST", "PATCH", "DELETE", "OPTIONS"]`. Restrict `allow_headers` to `["Authorization", "Content-Type"]`. `allow_origins` must be set from `CORS_ORIGINS` env var with no wildcard in production (`ENVIRONMENT=production`). Add a startup assertion that rejects a production boot with `CORS_ORIGINS=*`.
+  - **Files**: `backend/main.py`, `backend/config.py`
+  - **Acceptance criteria**:
+    - A request with an unlisted `Origin` receives no `Access-Control-Allow-Origin` header
+    - Backend refuses to start in production if `CORS_ORIGINS` contains `*`
+    - Development mode continues to work with `CORS_ORIGINS=http://localhost:4200`
+
+---
+
+## Feature: Per-Category Budget Allocation
+
+### Overview
+
+Adds per-category monthly spending limits so the dashboard category breakdown can show progress bars against individual budgets rather than the single household total. Deferred from Task 27. New tasks start at 30.
+
+---
+
+- [ ] **Task 30 — DB migration: category_budgets table** (Size: S)
+  - **Description**: Create `supabase/migrations/20260608000006_category_budgets.sql`. Define `category_budgets` (id uuid PK default gen_random_uuid(), household_id uuid NOT NULL REFERENCES households(id) ON DELETE CASCADE, category_id uuid NOT NULL REFERENCES budget_categories(id) ON DELETE CASCADE, monthly_limit numeric(12,2) NOT NULL CHECK (monthly_limit > 0), created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(), UNIQUE (household_id, category_id)). Add the `updated_at` auto-update trigger using the existing `set_updated_at()` function. Add an index on `category_budgets(household_id)`.
+  - **Depends on**: Task 19 (budget_categories must exist)
+  - **Files**: `supabase/migrations/20260608000006_category_budgets.sql` (new)
+  - **Acceptance criteria**:
+    - Migration applies to Neon without error
+    - `category_budgets` table exists with all columns and the `(household_id, category_id)` unique constraint
+    - Inserting a duplicate `(household_id, category_id)` pair raises a unique constraint error
+    - `updated_at` is auto-updated via trigger on UPDATE
+    - Index on `category_budgets(household_id)` exists
+
+- [ ] **Task 31 — Backend: category budget Pydantic models and DB operations** (Size: M)
+  - **Description**: Add to `backend/models.py`: `CategoryBudgetUpsert` (category_id: str, monthly_limit: float gt=0); `CategoryBudgetResponse` (id, household_id, category_id, category_name: Optional[str], monthly_limit, created_at, updated_at). Extend `CategorySpend` with `budget: Optional[float] = None`. Add to `backend/database.py`: `upsert_category_budget(household_id, category_id, monthly_limit) -> dict` (INSERT ... ON CONFLICT (household_id, category_id) DO UPDATE SET monthly_limit = EXCLUDED.monthly_limit, updated_at = NOW(), returns joined category name); `get_category_budgets(household_id) -> list[dict]` (joins budget_categories on category_id to include category_name, ordered by category_name ASC); `delete_category_budget(household_id, category_id) -> bool`. Update `get_dashboard_stats` to LEFT JOIN `category_budgets` in the category breakdown query so each `CategorySpend` row includes the matching `monthly_limit` (None if no budget set).
+  - **Depends on**: Task 30, Task 21
+  - **Files**: `backend/models.py`, `backend/database.py`
+  - **Acceptance criteria**:
+    - `CategoryBudgetUpsert.monthly_limit` rejects values <= 0
+    - `upsert_category_budget` creates a new row on first call and updates `monthly_limit` on a second call for the same `(household_id, category_id)` pair
+    - `get_category_budgets` returns `category_name` populated via JOIN
+    - `get_dashboard_stats` category breakdown rows include `budget` field: a float when a limit is set, None when not
+    - No existing models or DB functions are removed or broken
+
+- [ ] **Task 32 — Backend: category budget API endpoints** (Size: S)
+  - **Description**: Add to `backend/main.py`: `GET /api/category-budgets` (returns list of `CategoryBudgetResponse` for the household; 403 if no household); `PUT /api/category-budgets/{category_id}` (upserts a monthly limit for the given category; body is `CategoryBudgetUpsert`; 403 if no household; 404 if `category_id` does not belong to a default or household-specific category); `DELETE /api/category-budgets/{category_id}` (removes the limit; 403 if no household; 404 if no budget exists for that category; 204 on success). All three endpoints require owner or member role — no additional role check needed beyond household membership.
+  - **Depends on**: Task 31
+  - **Files**: `backend/main.py`
+  - **Acceptance criteria**:
+    - `GET /api/category-budgets` returns an empty list for a household with no budgets set
+    - `PUT /api/category-budgets/{category_id}` with a valid body returns HTTP 200 with `CategoryBudgetResponse` including `category_name`
+    - Calling `PUT` twice for the same category updates `monthly_limit` rather than creating a duplicate
+    - `DELETE /api/category-budgets/{category_id}` returns HTTP 204 on success and HTTP 404 if no budget row exists
+    - All three endpoints return HTTP 403 when `context.household_id` is None
+
+- [ ] **Task 33 — Frontend: budget allocation panel in settings** (Size: M)
+  - **Description**: Create `frontend/src/app/settings/components/budget-allocation/budget-allocation.component.ts` (standalone) with `.html` and `.scss`. The component fetches categories via `TransactionService.getCategories()` and existing budgets via a new `getBudgets()` call in `TransactionService`. Renders a list of categories; each row shows the category name and a numeric input for monthly limit (empty means no limit). A "Save" button at the bottom calls `PUT /api/category-budgets/{category_id}` for each row where a value was entered or changed, and `DELETE /api/category-budgets/{category_id}` for rows that were cleared. Add `getBudgets(): Observable<CategoryBudget[]>` and `upsertBudget(categoryId, limit): Observable<CategoryBudget>` and `deleteBudget(categoryId): Observable<void>` methods to `frontend/src/app/transactions/services/transaction.service.ts`. Add a `CategoryBudget` interface to `frontend/src/app/transactions/models/transaction.model.ts`. Embed `BudgetAllocationComponent` inside `SettingsPageComponent` template below the main settings form.
+  - **Depends on**: Task 32, Task 24
+  - **Files**: `frontend/src/app/settings/components/budget-allocation/budget-allocation.component.ts` (new), `frontend/src/app/settings/components/budget-allocation/budget-allocation.component.html` (new), `frontend/src/app/settings/components/budget-allocation/budget-allocation.component.scss` (new), `frontend/src/app/transactions/services/transaction.service.ts`, `frontend/src/app/transactions/models/transaction.model.ts`, `frontend/src/app/settings/components/settings-page/settings-page.component.html`, `frontend/src/app/settings/components/settings-page/settings-page.component.ts`
+  - **Acceptance criteria**:
+    - Budget allocation panel is visible on the `/settings` page below the existing form
+    - All categories (default + household-specific) are listed with their current monthly limit pre-filled if set
+    - Entering a value and saving calls `PUT /api/category-budgets/{category_id}` for that category
+    - Clearing a value that previously had a budget and saving calls `DELETE /api/category-budgets/{category_id}`
+    - Rows with no value and no prior budget are skipped (no API call made)
+    - Success and error states are shown inline using the same `.card` and `.btn-primary` pattern as the rest of the settings page
+
+- [ ] **Task 34 — Frontend: dashboard category breakdown with per-category budget progress** (Size: M)
+  - **Description**: Update `frontend/src/app/dashboard/services/dashboard.service.ts` to extend the `DashboardStats` interface: add `category_breakdown: CategorySpend[]` where `CategorySpend` has `category_name: string`, `spent: number`, `budget: number | null`. Update `DashboardComponent` template (`dashboard.component.html`) to render a "Spending by category" section below the four stat cards: one row per entry in `category_breakdown`, showing (a) category name, (b) spent amount formatted via `appCurrency` pipe, (c) a horizontal progress bar — if `budget` is non-null, bar width = `min(100, (spent/budget)*100)%` with `var(--caution)` fill when >= 90% and `var(--color-accent)` otherwise; if `budget` is null, render a plain bar segment without a percentage. Add `(d)` the budget limit formatted via `appCurrency` when set, or the text "No limit" when null. Update `dashboard.component.scss` to style the progress bar. If `category_breakdown` is empty, show the empty-state card linking to `/transactions` that was planned in Task 27.
+  - **Depends on**: Task 33, Task 27, Task 29
+  - **Files**: `frontend/src/app/dashboard/services/dashboard.service.ts`, `frontend/src/app/dashboard/components/dashboard/dashboard.component.html`, `frontend/src/app/dashboard/components/dashboard/dashboard.component.ts`, `frontend/src/app/dashboard/components/dashboard/dashboard.component.scss`
+  - **Acceptance criteria**:
+    - Dashboard "Spending by category" section renders one row per category that has transactions in the current month
+    - Each row with a budget set shows a filled progress bar; at >= 90% of limit the bar turns `var(--caution)`
+    - Each row with no budget set shows a plain unscaled bar segment
+    - Budget and spent amounts use the `appCurrency` pipe (no hardcoded `'£'`)
+    - Empty `category_breakdown` shows the empty-state card with a link to `/transactions`
+    - Dashboard still renders without errors when `household_id` is null (zeroed stats, no breakdown rows)
+
+---
+
+## Risks
+
+- `upsert_category_budget` relies on `ON CONFLICT (household_id, category_id)` — the unique constraint in Task 30 must be on those two columns exactly; any typo in the migration silently allows duplicates.
+- The budget allocation "Save" in Task 33 fires N parallel PUT/DELETE calls. Under slow network, partial failures are possible. Recommend wrapping in `forkJoin` and rolling back UI state if any call fails.
+- `CategorySpend.budget` is a new nullable field added to the existing `DashboardStats` response. The frontend `DashboardStats` interface must be updated before the backend deploys, or the dashboard will silently drop the field.
+- Task 34 depends on Task 29 (`appCurrency` pipe) being implemented. If Task 29 is skipped, use `formatCurrency()` method as a temporary fallback and note the debt.
+
+## Open Questions
+
+- Should category budgets be per-calendar-month (reset on the 1st) or rolling 30-day? Current plan uses calendar month (consistent with `get_dashboard_stats`).
+- Should household members be able to set category budgets, or only the owner? Current plan allows any household member to upsert/delete budgets — confirm intended permission model.
+- Should the dashboard show a "total allocated" figure (sum of all category limits) alongside the household monthly budget? Deferred; can be added to Task 34 if confirmed.
+
+---
+
+## Feature: Reset Password
+
+### Overview
+
+Adds a complete forgot/reset password flow: backend generates a short-lived signed token, sends a reset email via Resend, and exposes two endpoints. Frontend adds a `/forgot-password` page (email input) and a `/reset-password` page (new password input, token from URL). A "Forgot password?" link is added to the login form.
+
+---
+
+- [x] **Task 38 — DB migration: password_reset_tokens table** (Size: S)
+  - **Description**: Create `supabase/migrations/20260608000007_password_reset_tokens.sql`. Define `password_reset_tokens` table: id uuid PK default gen_random_uuid(), user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE, token_hash text UNIQUE NOT NULL, expires_at timestamptz NOT NULL, used_at timestamptz, created_at timestamptz DEFAULT now(). Add index on `(token_hash)` for fast lookup. Apply to Neon.
+  - **Depends on**: Task 36 (users table must exist)
+  - **Files**: `supabase/migrations/20260608000007_password_reset_tokens.sql` (new)
+  - **Acceptance criteria**:
+    - Migration applies to Neon without error
+    - `password_reset_tokens` table exists with all columns and constraints
+    - Index on `(token_hash)` exists
+    - Inserting a duplicate `token_hash` raises a unique constraint error
+
+- [x] **Task 39 — Backend: email service + forgot/reset password endpoints** (Size: M)
+  - **Description**: Create `backend/email_service.py` with async `send_password_reset_email(to_email, reset_url)` using Resend. Add `frontend_url: str = "http://localhost:4200"` to `backend/config.py`. Add `RESEND_API_KEY` and `RESEND_FROM_EMAIL` to config if missing. Add Pydantic models `ForgotPasswordRequest` and `ResetPasswordRequest` to `backend/models.py`. Add DB functions to `backend/database.py`: `create_password_reset_token`, `get_password_reset_token`, `mark_reset_token_used`, `update_user_password`. Add `POST /api/auth/forgot-password` endpoint (always returns 200, generates signed JWT, stores sha256 hash, sends reset email) and `POST /api/auth/reset-password` endpoint (verifies JWT + purpose, looks up hash, rejects expired/used tokens, updates password). Add `resend` to `backend/requirements.txt`.
+  - **Depends on**: Task 38
+  - **Files**: `backend/email_service.py` (new), `backend/config.py`, `backend/models.py`, `backend/database.py`, `backend/main.py`, `backend/requirements.txt`
+  - **Acceptance criteria**:
+    - `POST /api/auth/forgot-password` with registered email returns 200, sends email with reset link
+    - `POST /api/auth/forgot-password` with unknown email returns 200 (no enumeration)
+    - `POST /api/auth/reset-password` with valid unused token returns 200; user can log in with new password
+    - `POST /api/auth/reset-password` with expired token returns 400
+    - `POST /api/auth/reset-password` with already-used token returns 400
+    - `POST /api/auth/reset-password` with password < 6 chars returns 422
+
+- [x] **Task 40 — Frontend: forgot-password and reset-password pages** (Size: M)
+  - **Description**: Create standalone `ForgotPasswordComponent` at `/forgot-password` (email form, success message on submit, mirrors login card layout). Create standalone `ResetPasswordComponent` at `/reset-password` (reads `token` query param, shows error if absent, password + confirm form, navigates to `/login?reset=success` on success). Add "Forgot password?" link to `login.component.html` below password field. Add success banner to login page when `?reset=success` param is present. Register both routes in `app.routes.ts` without auth guards.
+  - **Depends on**: Task 39
+  - **Files**: `frontend/src/app/auth/forgot-password/` (new — 3 files), `frontend/src/app/auth/reset-password/` (new — 3 files), `frontend/src/app/auth/login/login.component.html`, `frontend/src/app/auth/login/login.component.ts`, `frontend/src/app/app.routes.ts`
+  - **Acceptance criteria**:
+    - `/forgot-password` accessible without auth; email submit shows success message
+    - `/reset-password` without token param shows error immediately
+    - Valid token + matching passwords (>= 6 chars) navigates to `/login?reset=success`
+    - Login page shows success banner when `?reset=success` is present
+    - "Forgot password?" link visible on login page below password field
+    - Both new pages match existing login/signup visual style
+
+---
+
+## Feature: Auth/Landing CSS Polish + Backend Bring-Up
+
+### Overview
+
+Two immediate tasks: (1) raise auth and landing SCSS to production quality by replacing all hardcoded colours with design tokens from `styles.scss`; (2) apply three pending Neon migrations, install `passlib[bcrypt]` in the venv, and verify the FastAPI server starts cleanly on port 8002.
+
+---
+
+- [ ] **Task 35 — CSS polish: login, signup, and landing pages** (Size: S)
+  - **Description**: Audit and rewrite `login.component.scss`, `signup.component.scss`, and `landing.component.scss`. Replace every hardcoded hex colour with CSS custom properties defined in `styles.scss` (`--accent`, `--bg-app`, `--bg-card`, `--text-primary`, `--text-muted`, `--border`, `--shadow-card`). Replace `.login-button` / `.signup-button` rules with the global `.btn-primary` class applied directly in HTML. Fix `display: inline-block` on `.btn-primary` and `.btn-ghost` in `styles.scss` so they work on `<a>` tags. Replace `padding: 10px` literals with `var(--space-sm)`. Add `color: var(--text-muted)` to `.landing-footer`.
+  - **Depends on**: None
+  - **Files**: `frontend/src/app/auth/login/login.component.scss`, `frontend/src/app/auth/login/login.component.html`, `frontend/src/app/auth/signup/signup.component.scss`, `frontend/src/app/auth/signup/signup.component.html`, `frontend/src/app/landing/landing.component.scss`, `frontend/src/styles.scss`
+  - **Acceptance criteria**:
+    - No hardcoded hex values (`#...`) in any of the three SCSS files
+    - `.btn-primary` and `.btn-ghost` have `display: inline-block` in `styles.scss`
+    - Login and signup forms use `.btn-primary` class on the submit button
+    - All spacing uses `var(--space-*)` tokens; no literal `px` padding values
+    - `ng build` completes without errors
+
+- [ ] **Task 36 — Backend: apply Neon migrations 3-5** (Size: S)
+  - **Description**: Apply the three pending SQL migration files to Neon in order using `psql`. The `DATABASE_URL` is in `backend/.env`. Migrations to apply: `supabase/migrations/20260608000003_users.sql` (creates `users` table), `supabase/migrations/20260608000004_transactions.sql` (creates `budget_categories` and `transactions` tables), `supabase/migrations/20260608000005_seed_categories.sql` (seeds 10 default categories). Verify each migration with a SELECT after applying.
+  - **Depends on**: None (Neon already has households/household_members from earlier migrations)
+  - **Files**: `supabase/migrations/20260608000003_users.sql`, `supabase/migrations/20260608000004_transactions.sql`, `supabase/migrations/20260608000005_seed_categories.sql`
+  - **Acceptance criteria**:
+    - All three migrations apply without errors
+    - `SELECT count(*) FROM users` returns 0 (table exists, empty)
+    - `SELECT count(*) FROM budget_categories WHERE is_default = true` returns 10
+    - `SELECT count(*) FROM transactions` returns 0 (table exists, empty)
+
+- [ ] **Task 37 — Backend: install dependencies and verify server starts** (Size: S)
+  - **Description**: Create/recreate the backend venv at `backend/venv`, install all dependencies from `backend/requirements.txt` (which includes `passlib[bcrypt]==1.7.4`). Start the server with `uvicorn main:app --reload --port 8002` from `backend/` and confirm it starts without import errors. Hit `GET /health` to verify a 200 response.
+  - **Depends on**: Task 36 (DB tables must exist for pool init)
+  - **Files**: `backend/requirements.txt` (no changes needed)
+  - **Acceptance criteria**:
+    - `pip install -r requirements.txt` completes with no errors
+    - `python3 -c "from passlib.hash import bcrypt; bcrypt.hash('test')"` succeeds inside the venv
+    - `uvicorn main:app --reload --port 8002` logs "Application startup complete"
+    - `GET http://localhost:8002/health` returns `{"status": "OK"}`

@@ -1,9 +1,12 @@
 """
-FastAPI backend for futureMe app with Supabase authentication
+FastAPI backend for futureMe app
 """
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone, timedelta
+from typing import Optional
+import jwt as pyjwt
 
 from config import settings
 from auth import get_current_user
@@ -12,8 +15,14 @@ from models import (
     DashboardStats, MessageResponse,
     CurrentUserContext,
     HouseholdCreate, HouseholdJoin, HouseholdResponse, HouseholdPublicResponse,
+    RegisterRequest, LoginRequest, AuthResponse, AuthUser,
+    CategoryCreate, CategoryResponse,
+    TransactionCreate, TransactionUpdate, TransactionResponse,
+    ForgotPasswordRequest, ResetPasswordRequest,
 )
 import database as db
+import email_service
+import hashlib
 
 
 @asynccontextmanager
@@ -39,6 +48,16 @@ app.add_middleware(
 )
 
 
+def _create_access_token(user_id: str, email: str, display_name: Optional[str]) -> str:
+    payload = {
+        "sub": user_id,
+        "email": email,
+        "display_name": display_name,
+        "exp": datetime.now(timezone.utc) + timedelta(days=7),
+    }
+    return pyjwt.encode(payload, settings.jwt_secret, algorithm="HS256")
+
+
 @app.get("/")
 def root():
     return {"message": "futureMe API is running", "version": "1.0.0"}
@@ -47,6 +66,108 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "OK"}
+
+
+# ============================================================
+# Auth endpoints
+# ============================================================
+
+@app.post("/api/auth/register", response_model=AuthResponse)
+async def register(body: RegisterRequest):
+    try:
+        user = await db.create_user(body.email, body.password, body.name)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    token = _create_access_token(user["id"], user["email"], user.get("display_name"))
+    return AuthResponse(
+        access_token=token,
+        user=AuthUser(id=user["id"], email=user["email"], display_name=user.get("display_name")),
+    )
+
+
+@app.post("/api/auth/login", response_model=AuthResponse)
+async def login(body: LoginRequest):
+    user = await db.get_user_by_email(body.email)
+    if not user or not db.verify_password(body.password, user["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+    token = _create_access_token(user["id"], user["email"], user.get("display_name"))
+    return AuthResponse(
+        access_token=token,
+        user=AuthUser(id=user["id"], email=user["email"], display_name=user.get("display_name")),
+    )
+
+
+@app.post("/api/auth/forgot-password", response_model=MessageResponse)
+async def forgot_password(body: ForgotPasswordRequest):
+    """Initiate password reset. Always returns 200 to prevent email enumeration."""
+    user = await db.get_user_by_email(body.email)
+    try:
+        if user:
+            # Generate a short-lived HS256 JWT for the reset link
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+            reset_payload = {
+                "sub": user["id"],
+                "purpose": "password_reset",
+                "exp": expires_at,
+            }
+            reset_token = pyjwt.encode(reset_payload, settings.jwt_secret, algorithm="HS256")
+
+            # Store sha256(token) in DB so we can look it up and invalidate it
+            token_hash = hashlib.sha256(reset_token.encode()).hexdigest()
+            await db.create_password_reset_token(user["id"], token_hash, expires_at)
+
+            reset_url = f"{settings.frontend_url}/reset-password?token={reset_token}"
+            await email_service.send_password_reset_email(user["email"], reset_url)
+    except Exception:
+        # Swallow all errors to preserve anti-enumeration: callers must never be able
+        # to distinguish a registered email (which might throw) from an unknown one.
+        pass
+
+    return MessageResponse(message="If that email is registered, a reset link has been sent.")
+
+
+@app.post("/api/auth/reset-password", response_model=MessageResponse)
+async def reset_password(body: ResetPasswordRequest):
+    """Complete password reset using the token from the email link."""
+    # Verify JWT signature and expiry
+    try:
+        payload = pyjwt.decode(body.token, settings.jwt_secret, algorithms=["HS256"])
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reset token has expired")
+    except pyjwt.PyJWTError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reset token")
+
+    # Verify purpose claim
+    if payload.get("purpose") != "password_reset":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reset token")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reset token")
+
+    # Look up token record by hash
+    token_hash = hashlib.sha256(body.token.encode()).hexdigest()
+    token_record = await db.get_password_reset_token(token_hash)
+
+    if not token_record:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reset token not found or already used")
+
+    # Reject if already used
+    if token_record.get("used_at") is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reset token has already been used")
+
+    # Reject if expired (DB-level check as belt-and-suspenders)
+    if token_record["expires_at"] < datetime.now(timezone.utc):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reset token has expired")
+
+    # Hash new password and update user record + invalidate token atomically
+    new_password_hash = db.hash_password(body.new_password)
+    await db.reset_password_with_token(token_hash, user_id, new_password_hash)
+
+    return MessageResponse(message="Password has been reset successfully.")
 
 
 # ============================================================
@@ -76,7 +197,7 @@ async def update_settings(
 
 @app.get("/api/dashboard", response_model=DashboardStats)
 async def get_dashboard(context: CurrentUserContext = Depends(get_current_user)):
-    stats = await db.get_dashboard_stats(context.user_id)
+    stats = await db.get_dashboard_stats(context.user_id, context.household_id)
     return stats
 
 
@@ -111,7 +232,6 @@ async def get_my_household(context: CurrentUserContext = Depends(get_current_use
 
 @app.get("/api/households/invite-code", response_model=HouseholdResponse)
 async def get_invite_code(context: CurrentUserContext = Depends(get_current_user)):
-    """Owner-only: returns full household response including invite_code."""
     if context.household_id is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -132,8 +252,6 @@ async def join_household(
     body: HouseholdJoin,
     context: CurrentUserContext = Depends(get_current_user),
 ):
-    # H5: rate-limit this endpoint to prevent invite-code enumeration.
-    # Add slowapi middleware (pip install slowapi) before deploying to production.
     if context.household_id is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -147,3 +265,97 @@ async def join_household(
         )
     await db.join_household(context.user_id, household["id"])
     return household
+
+
+# ============================================================
+# Category endpoints
+# ============================================================
+
+@app.get("/api/categories", response_model=list[CategoryResponse])
+async def get_categories(context: CurrentUserContext = Depends(get_current_user)):
+    if context.household_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
+    return await db.get_categories(context.household_id)
+
+
+@app.post("/api/categories", response_model=CategoryResponse, status_code=201)
+async def create_category(
+    body: CategoryCreate,
+    context: CurrentUserContext = Depends(get_current_user),
+):
+    if context.household_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
+    return await db.create_category(context.household_id, body.name, body.icon, body.color)
+
+
+# ============================================================
+# Transaction endpoints
+# ============================================================
+
+@app.get("/api/transactions", response_model=list[TransactionResponse])
+async def get_transactions(
+    month: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}$"),
+    context: CurrentUserContext = Depends(get_current_user),
+):
+    if context.household_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
+    return await db.get_transactions(context.household_id, month)
+
+
+@app.post("/api/transactions", response_model=TransactionResponse, status_code=201)
+async def create_transaction(
+    body: TransactionCreate,
+    context: CurrentUserContext = Depends(get_current_user),
+):
+    if context.household_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
+    return await db.create_transaction(context.household_id, context.user_id, body)
+
+
+@app.get("/api/transactions/{transaction_id}", response_model=TransactionResponse)
+async def get_transaction(
+    transaction_id: str,
+    context: CurrentUserContext = Depends(get_current_user),
+):
+    if context.household_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
+    t = await db.get_transaction(context.household_id, transaction_id)
+    if not t:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+    return t
+
+
+@app.patch("/api/transactions/{transaction_id}", response_model=TransactionResponse)
+async def update_transaction(
+    transaction_id: str,
+    body: TransactionUpdate,
+    context: CurrentUserContext = Depends(get_current_user),
+):
+    if context.household_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
+    existing = await db.get_transaction(context.household_id, transaction_id)
+    if not existing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+    if existing["user_id"] != context.user_id:
+        role = await db.get_member_role(context.user_id, context.household_id)
+        if role != "owner":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to edit this transaction")
+    updated = await db.update_transaction(context.household_id, transaction_id, body)
+    return updated
+
+
+@app.delete("/api/transactions/{transaction_id}", status_code=204)
+async def delete_transaction(
+    transaction_id: str,
+    context: CurrentUserContext = Depends(get_current_user),
+):
+    if context.household_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
+    existing = await db.get_transaction(context.household_id, transaction_id)
+    if not existing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+    if existing["user_id"] != context.user_id:
+        role = await db.get_member_role(context.user_id, context.household_id)
+        if role != "owner":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete this transaction")
+    await db.delete_transaction(context.household_id, transaction_id)

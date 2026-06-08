@@ -40,5 +40,28 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+
+    /**
+     * auth-pages project
+     * ------------------
+     * Covers the landing page (/), login page (/login), and signup page (/signup).
+     * These are all public routes that require no authentication.
+     *
+     * The Angular dev server must be running on the port declared in
+     * AUTH_PAGES_BASE_URL (default: http://localhost:4200).  Start it with:
+     *   cd frontend && ng serve           # default port 4200
+     *   cd frontend && ng serve --port 4202  # if you want the same port as CI
+     *
+     * Run only this project with:
+     *   npx playwright test --project=auth-pages
+     */
+    {
+      name: 'auth-pages',
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: process.env['AUTH_PAGES_BASE_URL'] || 'http://localhost:4200',
+      },
+      testMatch: ['**/smoke/auth-pages.spec.ts', '**/smoke/password-reset.spec.ts'],
+    },
   ],
 });

@@ -1,8 +1,14 @@
 <div class="login-container">
+  <a routerLink="/" class="back-home"><span class="arrow">←</span><span>Back to home</span></a>
   <div class="login-card">
     <!-- Page Title -->
     <h2>Welcome Back</h2>
     <p class="subtitle">Sign in to futureMe</p>
+
+    <!-- Reset Success Banner -->
+    <div class="success-banner" *ngIf="resetSuccess">
+      Password reset successfully. Please log in with your new password.
+    </div>
 
     <!-- Login Form -->
     <form (ngSubmit)="onLogin()" #loginForm="ngForm">
@@ -35,19 +41,26 @@
         />
       </div>
 
+      <!-- Forgot Password Link -->
+      <div class="forgot-password">
+        <a routerLink="/forgot-password">Forgot password?</a>
+      </div>
+
       <!-- Error Message -->
       <div class="error-message" *ngIf="errorMessage">
         {{ errorMessage }}
       </div>
 
       <!-- Submit Button -->
-      <button
-        type="submit"
-        class="login-button"
-        [disabled]="loading"
-      >
-        {{ loading ? 'Logging in...' : 'Login' }}
-      </button>
+      <div class="form-actions">
+        <button
+          type="submit"
+          class="btn-primary"
+          [disabled]="loading"
+        >
+          {{ loading ? 'Logging in...' : 'Login' }}
+        </button>
+      </div>
     </form>
 
     <!-- Link to Signup -->
