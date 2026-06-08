@@ -1,0 +1,41 @@
+.list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-md);
+}
+
+.controls {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+.transactions-table {
+  width: 100%;
+  border-collapse: collapse;
+
+  th, td {
+    padding: var(--space-sm);
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+
+  th {
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+}
+
+.amount-expense {
+  color: var(--caution, #e53e3e);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.amount-income {
+  color: var(--positive, #38a169);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,32 @@
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+
+  label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  input, select {
+    padding: var(--space-sm);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 1rem;
+    background: var(--bg-card, #fff);
+    color: var(--text-primary);
+  }
+}
+
+.error {
+  color: var(--caution, #e53e3e);
+  font-size: 0.8rem;
+}
