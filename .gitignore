@@ -56,3 +56,9 @@ build/
 
 playwright-report/
 test-results/
+frontend/src/environments/environment.prod.ts
+
+# Claude Code tooling
+.agents/
+.claude/skills/
+skills-lock.json

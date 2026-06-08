@@ -266,7 +266,7 @@ Delivers the core budgeting loop: set a budget → log expenses/income with cate
 
 ---
 
-- [ ] **Task 19 — DB migration: budget_categories and transactions tables** (Size: M)
+- [x] **Task 19 — DB migration: budget_categories and transactions tables** (Size: M)
   - **Description**: Create `supabase/migrations/20260608000004_transactions.sql`. Define `budget_categories` (id uuid PK default gen_random_uuid(), household_id uuid REFERENCES households(id) ON DELETE CASCADE — nullable, name text NOT NULL, icon text, color text, is_default boolean DEFAULT false, created_at timestamptz DEFAULT now(), UNIQUE (household_id, name)). Define `transactions` (id uuid PK default gen_random_uuid(), household_id uuid NOT NULL REFERENCES households(id) ON DELETE CASCADE, user_id uuid NOT NULL, category_id uuid REFERENCES budget_categories(id) ON DELETE SET NULL, amount numeric(12,2) NOT NULL, type text NOT NULL CHECK (type IN ('expense','income')), description text, date date NOT NULL DEFAULT CURRENT_DATE, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()). Add `updated_at` trigger on `transactions` reusing existing `set_updated_at()`. Add index on `transactions(household_id, date DESC)`.
   - **Depends on**: None (reuses `set_updated_at()` from migration 20260608000001)
   - **Files**: `supabase/migrations/20260608000004_transactions.sql` (new)
@@ -276,7 +276,7 @@ Delivers the core budgeting loop: set a budget → log expenses/income with cate
     - `INSERT` into `transactions` auto-populates `updated_at` via trigger
     - Index on `transactions(household_id, date DESC)` exists
 
-- [ ] **Task 20 — DB migration: seed default budget categories** (Size: S)
+- [x] **Task 20 — DB migration: seed default budget categories** (Size: S)
   - **Description**: Create `supabase/migrations/20260608000005_seed_categories.sql`. Allow `budget_categories.household_id` to be NULL (already nullable from Task 19). Add a partial unique index `UNIQUE (name) WHERE household_id IS NULL` to prevent duplicate defaults. Insert 10 default rows with `household_id = NULL` and `is_default = true`: Groceries, Rent/Mortgage, Transport, Utilities, Dining Out, Entertainment, Healthcare, Clothing, Savings, Income.
   - **Depends on**: Task 19
   - **Files**: `supabase/migrations/20260608000005_seed_categories.sql` (new)
@@ -286,7 +286,7 @@ Delivers the core budgeting loop: set a budget → log expenses/income with cate
     - Inserting a duplicate default category name raises a unique constraint error
     - `household_id` column accepts NULL
 
-- [ ] **Task 21 — Backend: Pydantic models for transactions and categories** (Size: S)
+- [x] **Task 21 — Backend: Pydantic models for transactions and categories** (Size: S)
   - **Description**: Add to `backend/models.py`: `CategoryCreate` (name: str, icon: Optional[str], color: Optional[str]); `CategoryResponse` (id, household_id, name, icon, color, is_default, created_at); `TransactionCreate` (amount: float ge=0.01, type: Literal['expense','income'], description: Optional[str], date: date, category_id: Optional[str]); `TransactionUpdate` (all fields Optional matching TransactionCreate); `TransactionResponse` (id, household_id, user_id, category_id, amount, type, description, date, created_at, updated_at, category_name: Optional[str]). Also add `CategorySpend` (category_name: str, spent: float, budget: Optional[float]) and extend `DashboardStats` with `category_breakdown: list[CategorySpend] = []`.
   - **Depends on**: Task 19
   - **Files**: `backend/models.py`
@@ -297,7 +297,7 @@ Delivers the core budgeting loop: set a budget → log expenses/income with cate
     - `DashboardStats` includes `category_breakdown` field defaulting to empty list
     - No existing models removed or broken
 
-- [ ] **Task 22 — Backend: categories and transactions DB operations** (Size: M)
+- [x] **Task 22 — Backend: categories and transactions DB operations** (Size: M)
   - **Description**: Add to `backend/database.py`: `get_categories(household_id: str) -> list[dict]` (returns rows where `household_id = $1 OR household_id IS NULL`); `create_category(household_id, name, icon, color) -> dict`; `create_transaction(household_id, user_id, data: TransactionCreate) -> dict` (joins category name on RETURNING); `get_transactions(household_id: str, month: Optional[str] = None) -> list[dict]` (month = 'YYYY-MM', joins category name, ordered by date DESC); `get_transaction(household_id, transaction_id) -> Optional[dict]`; `update_transaction(household_id, transaction_id, data: TransactionUpdate) -> dict`; `delete_transaction(household_id, transaction_id) -> bool`. Update `get_dashboard_stats(user_id, household_id)` to accept household_id and compute `total_spent` as `SUM(amount) WHERE type='expense' AND household_id=$hid AND date_trunc('month',date)=date_trunc('month',CURRENT_DATE)`, plus per-category breakdown via GROUP BY.
   - **Depends on**: Task 21
   - **Files**: `backend/database.py`
@@ -308,7 +308,7 @@ Delivers the core budgeting loop: set a budget → log expenses/income with cate
     - `get_dashboard_stats` returns real `total_spent` from `transactions` table
     - All functions use `_serialize_row` and the `pool.acquire()` context-manager pattern
 
-- [ ] **Task 23 — Backend: categories and transactions API endpoints** (Size: M)
+- [x] **Task 23 — Backend: categories and transactions API endpoints** (Size: M)
   - **Description**: Add to `backend/main.py`: `GET /api/categories` (returns default + household categories; 403 if no household); `POST /api/categories` (creates custom category for household; 403 if no household); `GET /api/transactions` (query param `month=YYYY-MM` optional, scoped to household; 403 if no household); `POST /api/transactions` (creates transaction; 403 if no household); `GET /api/transactions/{id}` (403 if not household member); `PATCH /api/transactions/{id}` (403 unless `transaction.user_id == context.user_id` or role == 'owner'); `DELETE /api/transactions/{id}` (same ownership rule). Update `GET /api/dashboard` to pass `context.household_id` to `get_dashboard_stats`; return zeroed stats if `household_id` is None rather than raising 500.
   - **Depends on**: Task 22
   - **Files**: `backend/main.py`
@@ -575,7 +575,7 @@ Two immediate tasks: (1) raise auth and landing SCSS to production quality by re
 
 ---
 
-- [ ] **Task 35 — CSS polish: login, signup, and landing pages** (Size: S)
+- [x] **Task 35 — CSS polish: login, signup, and landing pages** (Size: S)
   - **Description**: Audit and rewrite `login.component.scss`, `signup.component.scss`, and `landing.component.scss`. Replace every hardcoded hex colour with CSS custom properties defined in `styles.scss` (`--accent`, `--bg-app`, `--bg-card`, `--text-primary`, `--text-muted`, `--border`, `--shadow-card`). Replace `.login-button` / `.signup-button` rules with the global `.btn-primary` class applied directly in HTML. Fix `display: inline-block` on `.btn-primary` and `.btn-ghost` in `styles.scss` so they work on `<a>` tags. Replace `padding: 10px` literals with `var(--space-sm)`. Add `color: var(--text-muted)` to `.landing-footer`.
   - **Depends on**: None
   - **Files**: `frontend/src/app/auth/login/login.component.scss`, `frontend/src/app/auth/login/login.component.html`, `frontend/src/app/auth/signup/signup.component.scss`, `frontend/src/app/auth/signup/signup.component.html`, `frontend/src/app/landing/landing.component.scss`, `frontend/src/styles.scss`
@@ -586,7 +586,7 @@ Two immediate tasks: (1) raise auth and landing SCSS to production quality by re
     - All spacing uses `var(--space-*)` tokens; no literal `px` padding values
     - `ng build` completes without errors
 
-- [ ] **Task 36 — Backend: apply Neon migrations 3-5** (Size: S)
+- [x] **Task 36 — Backend: apply Neon migrations 3-5** (Size: S)
   - **Description**: Apply the three pending SQL migration files to Neon in order using `psql`. The `DATABASE_URL` is in `backend/.env`. Migrations to apply: `supabase/migrations/20260608000003_users.sql` (creates `users` table), `supabase/migrations/20260608000004_transactions.sql` (creates `budget_categories` and `transactions` tables), `supabase/migrations/20260608000005_seed_categories.sql` (seeds 10 default categories). Verify each migration with a SELECT after applying.
   - **Depends on**: None (Neon already has households/household_members from earlier migrations)
   - **Files**: `supabase/migrations/20260608000003_users.sql`, `supabase/migrations/20260608000004_transactions.sql`, `supabase/migrations/20260608000005_seed_categories.sql`
@@ -596,7 +596,7 @@ Two immediate tasks: (1) raise auth and landing SCSS to production quality by re
     - `SELECT count(*) FROM budget_categories WHERE is_default = true` returns 10
     - `SELECT count(*) FROM transactions` returns 0 (table exists, empty)
 
-- [ ] **Task 37 — Backend: install dependencies and verify server starts** (Size: S)
+- [x] **Task 37 — Backend: install dependencies and verify server starts** (Size: S)
   - **Description**: Create/recreate the backend venv at `backend/venv`, install all dependencies from `backend/requirements.txt` (which includes `passlib[bcrypt]==1.7.4`). Start the server with `uvicorn main:app --reload --port 8002` from `backend/` and confirm it starts without import errors. Hit `GET /health` to verify a 200 response.
   - **Depends on**: Task 36 (DB tables must exist for pool init)
   - **Files**: `backend/requirements.txt` (no changes needed)
