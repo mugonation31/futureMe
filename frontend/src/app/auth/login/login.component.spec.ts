@@ -106,6 +106,30 @@ describe('LoginComponent', () => {
     const banner: HTMLElement | null = fixture.nativeElement.querySelector('.success-banner');
     expect(banner).toBeNull();
   });
+
+  // Test 13 (new): showPassword initial state is falsy for 'password' field
+  it('should have falsy initial state for showPassword["password"]', () => {
+    // Assert
+    expect(component.showPassword['password']).toBeFalsy();
+  });
+
+  // Test 14 (new): togglePasswordVisibility toggles showPassword for 'password' field
+  it('should toggle showPassword["password"] when togglePasswordVisibility is called', () => {
+    // Arrange
+    expect(component.showPassword['password']).toBeFalsy();
+
+    // Act
+    component.togglePasswordVisibility('password');
+
+    // Assert
+    expect(component.showPassword['password']).toBeTrue();
+
+    // Act again
+    component.togglePasswordVisibility('password');
+
+    // Assert
+    expect(component.showPassword['password']).toBeFalse();
+  });
 });
 
 // Test 14 in its own describe to avoid TestBed.resetTestingModule() inside it()

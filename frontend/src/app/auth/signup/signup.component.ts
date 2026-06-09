@@ -19,6 +19,7 @@ export class SignupComponent {
   confirmPassword = '';
   loading = false;
   errorMessage = '';
+  showPassword: Record<string, boolean> = {};
 
   constructor(
     private authService: AuthService,
@@ -27,6 +28,18 @@ export class SignupComponent {
     if (this.authService.isAuthenticated()) {
       this.router.navigate(['/dashboard']);
     }
+  }
+
+  togglePasswordVisibility(field: string): void {
+    this.showPassword[field] = !this.showPassword[field];
+  }
+
+  hasDigit(p: string): boolean {
+    return /\d/.test(p);
+  }
+
+  hasSpecialChar(p: string): boolean {
+    return /[!@#$%^&*()_+\-=\[\]{}|;':",./<>?]/.test(p);
   }
 
   private validateForm(): boolean {
@@ -45,6 +58,10 @@ export class SignupComponent {
     }
     if (this.password.length < 6) {
       this.errorMessage = 'Password must be at least 6 characters';
+      return false;
+    }
+    if (!this.hasDigit(this.password) || !this.hasSpecialChar(this.password)) {
+      this.errorMessage = 'Password must contain at least one digit and one special character (e.g. !, @, #).';
       return false;
     }
     if (this.password !== this.confirmPassword) {

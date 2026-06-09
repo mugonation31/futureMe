@@ -21,6 +21,9 @@ class Settings(BaseSettings):
 
     frontend_url: str = "http://localhost:4200"
 
+    jwt_expiry_minutes: int = 60
+    jwt_refresh_expiry_days: int = 7
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [origin.strip() for origin in self.cors_origins.split(",")]

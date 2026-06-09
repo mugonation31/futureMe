@@ -149,7 +149,7 @@ async def test_reset_password_returns_200_with_valid_token():
             # Act
             response = await client.post(
                 "/api/auth/reset-password",
-                json={"token": valid_token, "new_password": "newpass123"},
+                json={"token": valid_token, "new_password": "Newpass1@"},
             )
 
     # Assert
@@ -174,7 +174,7 @@ async def test_reset_password_returns_400_with_expired_token():
         # Act
         response = await client.post(
             "/api/auth/reset-password",
-            json={"token": expired_token, "new_password": "newpass123"},
+            json={"token": expired_token, "new_password": "Newpass1@"},
         )
 
     # Assert
@@ -203,7 +203,7 @@ async def test_reset_password_returns_400_when_token_already_used():
             # Act
             response = await client.post(
                 "/api/auth/reset-password",
-                json={"token": valid_token, "new_password": "newpass123"},
+                json={"token": valid_token, "new_password": "Newpass1@"},
             )
 
     # Assert
@@ -248,7 +248,7 @@ async def test_reset_password_returns_400_with_invalid_jwt():
         # Act
         response = await client.post(
             "/api/auth/reset-password",
-            json={"token": "not.a.valid.jwt", "new_password": "newpass123"},
+            json={"token": "not.a.valid.jwt", "new_password": "Newpass1@"},
         )
 
     # Assert

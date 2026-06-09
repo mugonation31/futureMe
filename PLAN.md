@@ -407,7 +407,7 @@ Delivers the core budgeting loop: set a budget → log expenses/income with cate
 
 Items explicitly deferred during the Tasks 21–23 dev cycle (2026-06-08). Must be completed before the first production deployment.
 
-- [ ] **SEC-1 — Shorten JWT access token lifetime and add refresh token endpoint** (Size: M)
+- [x] **SEC-1 — Shorten JWT access token lifetime and add refresh token endpoint** (Size: M)
   - **Description**: Supabase issues JWTs with a 7-day lifetime. Shorten the access token lifetime to 15–60 minutes (configurable via `SUPABASE_JWT_EXPIRY` env var). Add a `POST /api/auth/refresh` endpoint that accepts a refresh token and returns a new access token. Frontend must handle 401 responses by attempting a silent refresh before redirecting to login.
   - **Files**: `backend/auth.py`, `backend/main.py`, `frontend/src/app/core/services/auth.service.ts`
   - **Acceptance criteria**:
@@ -415,7 +415,7 @@ Items explicitly deferred during the Tasks 21–23 dev cycle (2026-06-08). Must 
     - A valid refresh token returns a new access token without requiring re-login
     - Expired access token mid-session triggers a silent refresh, not an immediate logout
 
-- [ ] **SEC-2 — Password complexity validation on signup** (Size: S)
+- [x] **SEC-2 — Password complexity validation on signup** (Size: S)
   - **Description**: Add server-side and client-side validation requiring passwords to contain at least 1 digit and 1 special character (in addition to existing length check). Return a clear 422 error message listing the unmet requirements so the frontend can display them inline.
   - **Files**: `backend/main.py` (or `auth.py`), `frontend/src/app/auth/signup/signup.component.ts`
   - **Acceptance criteria**:

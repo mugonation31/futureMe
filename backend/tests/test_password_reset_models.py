@@ -23,14 +23,14 @@ def test_should_reject_reset_password_request_with_short_password():
 # Test 4: ResetPasswordRequest accepts password of exactly 6 chars
 # ============================================================
 
-def test_should_accept_reset_password_request_with_exactly_6_char_password():
-    """should accept ResetPasswordRequest with password of exactly 6 characters"""
+def test_should_accept_reset_password_request_with_valid_complex_password():
+    """should accept ResetPasswordRequest with a password meeting length and complexity requirements"""
     # Arrange / Act
     from models import ResetPasswordRequest
-    req = ResetPasswordRequest(token="some-token", new_password="abc123")
+    req = ResetPasswordRequest(token="some-token", new_password="Ab1@xy")
 
     # Assert
-    assert req.new_password == "abc123"
+    assert req.new_password == "Ab1@xy"
     assert req.token == "some-token"
 
 

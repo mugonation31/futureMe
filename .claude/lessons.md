@@ -206,3 +206,53 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 **Tags:** typescript, e2e, testing, page-objects
 
 ---
+
+## 2026-06-09 — SEC-1: JWT refresh token — Angular interceptor, token storage, and bootstrap cleanup
+
+**What happened:** Four blocking defects were found during code review: (1) the 401-retry interceptor did not skip the `/auth/refresh` URL itself — a 401 from the refresh endpoint looped back through the interceptor indefinitely; (2) the interceptor wrote tokens directly to `localStorage` by key string, bypassing `AuthService`'s BehaviorSubject and leaving `currentUser$` permanently stale; (3) `refreshAccessToken()` did not guard against a missing refresh token — `localStorage.getItem()` returns `null`, and posting `{ refresh_token: null }` reaches the server as the literal string `"null"`, causing a 401 that re-triggered the interceptor; (4) `loadUserFromToken()` cleared an expired access token on bootstrap but left the refresh token, silently re-authenticating the user on the first subsequent 401.
+**Why:** Each defect was an incomplete scope in one direction: the interceptor covered the happy path but not its own error path; direct `localStorage` writes saved a method call but broke the reactive layer; the null guard was skipped as "unlikely"; bootstrap cleanup was written for one token only.
+**Next time:** For the refresh-token interceptor in this project, the mandatory checklist is: (1) add `if (req.url.includes('/auth/refresh')) return next(req)` as the very first line; (2) call `this.authService.storeAccessToken(token)` — never write `localStorage` directly in an interceptor; (3) read the refresh token at the top of `refreshAccessToken()` and `throwError(...)` immediately if null; (4) in `loadUserFromToken()`, call `this.authService.logout()` when the access token is invalid — always clear both tokens together.
+**Tags:** auth, angular, interceptor, security
+
+---
+
+## 2026-06-09 — SEC-1: refresh token storage — localStorage tradeoff and the correct long-term posture
+
+**What happened:** The SEC-1 implementation stored the refresh token in `localStorage`. A security scan confirmed this is the standard tradeoff when the access token is also in `localStorage`, but identified the correct long-term posture: access token in memory only (never persisted), refresh token in an `HttpOnly; Secure; SameSite=Strict` cookie, Angular `HttpClient` configured with `withCredentials: true`.
+**Why:** `localStorage` is accessible to any JavaScript in the same origin, including XSS payloads. A 7-day refresh token in `localStorage` gives an attacker a 7-day window after a single XSS. An `HttpOnly` cookie eliminates the JavaScript-access surface entirely.
+**Next time:** When revisiting token storage in this project: (1) access token moves to a BehaviorSubject field in `AuthService` — never written to `localStorage`; (2) refresh token is set as `HttpOnly; Secure; SameSite=Strict` via `Set-Cookie` in the FastAPI login/refresh response; (3) `withCredentials: true` is added to all `HttpClient` calls that need the cookie. Track this as a dedicated security task in PLAN.md — it is a coordinated frontend + backend breaking change.
+**Tags:** security, auth, jwt, frontend
+
+---
+
+## 2026-06-09 — SEC-2: password complexity validation + show/hide toggle
+
+**What happened:** The `passwordsValid` getter in the reset-password component only checked `length >= 6` and matching passwords. A weak password like `abcabc` satisfied both conditions, enabled the submit button, hit the backend, received a 422, and surfaced to the user as the generic "Something went wrong." The fix required adding `hasDigit()` and `hasSpecialChar()` to the component and including both in the getter.
+**Why:** The getter logic and the password-rules hint list were implemented separately — the hint list methods were added to signup but the getter was written independently. The gap was invisible until the submit path was traced end-to-end.
+**Next time:** Any time a new password constraint is added to the backend, the frontend `passwordsValid` getter (or equivalent submit guard) must be updated in the same commit. The hint list and the submit guard are separate UI concerns but must enforce the same rule set. Add a comment linking them: `// must match backend RegisterRequest.password validator`.
+**Tags:** auth, angular, forms, validation
+
+---
+
+**What happened:** The password-rules hint list was added to the signup form but initially missed the reset-password form. Both forms set a password subject to the same backend validator, so both must show the same hints.
+**Why:** Constraints are implemented on one form first, then carried to similar forms as a follow-up. The follow-up is easy to skip or forget because the forms are in separate component files.
+**Next time:** When adding any shared constraint (complexity rule, length limit, pattern) to a password field, immediately check all other password-setting surfaces in the project — currently: `signup`, `reset-password`, and any future "change password" form. Treat this as a required checklist step, not an optional follow-up.
+**Tags:** auth, angular, forms, consistency
+
+---
+
+**What happened:** The `showPassword` state map in password-toggle components was typed as `Record<string, boolean>`, accepting any string key. In templates only literal strings are used, so it is safe today — but if a key were ever sourced from user input, this would be a prototype-pollution vector.
+**Why:** `Record<string, boolean>` is the natural TypeScript shorthand for a string-keyed map. The risk is not obvious because Angular templates look like they pass literals, but the method signature itself imposes no constraint.
+**Next time:** Type `showPassword` as `Record<'password' | 'confirmPassword' | 'currentPassword', boolean>` (or whatever the actual field names are) and type `togglePasswordVisibility(field: 'password' | 'confirmPassword' | ...)` accordingly. A union type costs nothing and narrows the method signature against future misuse.
+**Tags:** security, angular, typescript, forms
+
+---
+
+## 2026-06-09 — SEC-1: `/api/auth/refresh` must remain unauthenticated — this is intentional
+
+**What happened:** The `/api/auth/refresh` endpoint was correctly implemented without `Depends(get_current_user)`. A review note confirmed this is intentional and must not change: the refresh token is the credential for this endpoint. Adding `get_current_user` would make the endpoint unreachable by design — it exists precisely because the access token is expired.
+**Why:** It is tempting to apply `Depends(get_current_user)` uniformly to all auth-related endpoints. The refresh endpoint is the one structural exception where that dependency creates a circular requirement.
+**Next time:** Do not add `Depends(get_current_user)` to `/api/auth/refresh`. If a reviewer or linter flags this endpoint as unauthenticated, the answer is: the refresh token in the request body IS the credential. Add a comment to the route definition in `main.py` documenting this so future reviewers understand the intent without needing to re-derive it.
+**Tags:** auth, fastapi, backend, security
+
+---

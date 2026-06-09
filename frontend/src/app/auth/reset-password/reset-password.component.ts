@@ -18,6 +18,7 @@ export class ResetPasswordComponent implements OnInit {
   confirmPassword = '';
   loading = false;
   errorMessage = '';
+  showPassword: Record<string, boolean> = {};
 
   constructor(
     private http: HttpClient,
@@ -32,8 +33,20 @@ export class ResetPasswordComponent implements OnInit {
     }
   }
 
+  togglePasswordVisibility(field: string): void {
+    this.showPassword[field] = !this.showPassword[field];
+  }
+
+  hasDigit(p: string): boolean { return /\d/.test(p); }
+  hasSpecialChar(p: string): boolean { return /[!@#$%^&*()_+\-=\[\]{}|;':",./<>?]/.test(p); }
+
   get passwordsValid(): boolean {
-    return this.newPassword.length >= 6 && this.newPassword === this.confirmPassword;
+    return (
+      this.newPassword.length >= 6 &&
+      this.hasDigit(this.newPassword) &&
+      this.hasSpecialChar(this.newPassword) &&
+      this.newPassword === this.confirmPassword
+    );
   }
 
   onSubmit() {

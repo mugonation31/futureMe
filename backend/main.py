@@ -16,6 +16,7 @@ from models import (
     CurrentUserContext,
     HouseholdCreate, HouseholdJoin, HouseholdResponse, HouseholdPublicResponse,
     RegisterRequest, LoginRequest, AuthResponse, AuthUser,
+    RefreshRequest, AccessTokenResponse,
     CategoryCreate, CategoryResponse,
     TransactionCreate, TransactionUpdate, TransactionResponse,
     ForgotPasswordRequest, ResetPasswordRequest,
@@ -53,7 +54,16 @@ def _create_access_token(user_id: str, email: str, display_name: Optional[str]) 
         "sub": user_id,
         "email": email,
         "display_name": display_name,
-        "exp": datetime.now(timezone.utc) + timedelta(days=7),
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expiry_minutes),
+    }
+    return pyjwt.encode(payload, settings.jwt_secret, algorithm="HS256")
+
+
+def _create_refresh_token(user_id: str) -> str:
+    payload = {
+        "sub": user_id,
+        "purpose": "refresh",
+        "exp": datetime.now(timezone.utc) + timedelta(days=settings.jwt_refresh_expiry_days),
     }
     return pyjwt.encode(payload, settings.jwt_secret, algorithm="HS256")
 
@@ -79,8 +89,10 @@ async def register(body: RegisterRequest):
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     token = _create_access_token(user["id"], user["email"], user.get("display_name"))
+    refresh_token = _create_refresh_token(user["id"])
     return AuthResponse(
         access_token=token,
+        refresh_token=refresh_token,
         user=AuthUser(id=user["id"], email=user["email"], display_name=user.get("display_name")),
     )
 
@@ -94,10 +106,36 @@ async def login(body: LoginRequest):
             detail="Invalid email or password",
         )
     token = _create_access_token(user["id"], user["email"], user.get("display_name"))
+    refresh_token = _create_refresh_token(user["id"])
     return AuthResponse(
         access_token=token,
+        refresh_token=refresh_token,
         user=AuthUser(id=user["id"], email=user["email"], display_name=user.get("display_name")),
     )
+
+
+@app.post("/api/auth/refresh", response_model=AccessTokenResponse)
+async def refresh_token(body: RefreshRequest):
+    """Exchange a valid refresh token for a new access token."""
+    try:
+        payload = pyjwt.decode(body.refresh_token, settings.jwt_secret, algorithms=["HS256"])
+    except (pyjwt.ExpiredSignatureError, pyjwt.PyJWTError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
+
+    if payload.get("purpose") != "refresh":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token purpose")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+
+    # Retrieve user to get email and display_name for the new access token
+    user = await db.get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    new_access_token = _create_access_token(user["id"], user["email"], user.get("display_name"))
+    return AccessTokenResponse(access_token=new_access_token)
 
 
 @app.post("/api/auth/forgot-password", response_model=MessageResponse)

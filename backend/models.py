@@ -1,10 +1,23 @@
 """
 Pydantic models for request/response validation
 """
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional, Literal
 from datetime import datetime
 from datetime import date as date_type
+
+_SPECIAL_CHARS = set("!@#$%^&*()_+-=[]{}|;':\",./<>?")
+
+
+def _validate_password_complexity(v: str) -> str:
+    """Require at least one digit and one special character."""
+    has_digit = any(c.isdigit() for c in v)
+    has_special = any(c in _SPECIAL_CHARS for c in v)
+    if not has_digit or not has_special:
+        raise ValueError(
+            "Password must contain at least one digit and one special character (e.g. !, @, #)."
+        )
+    return v
 
 
 # ============================================================
@@ -16,6 +29,11 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=6)
     name: str = Field(..., min_length=1, max_length=100)
 
+    @field_validator("password")
+    @classmethod
+    def password_complexity(cls, v: str) -> str:
+        return _validate_password_complexity(v)
+
 
 class ForgotPasswordRequest(BaseModel):
     email: str = Field(..., min_length=3, max_length=254)
@@ -25,10 +43,15 @@ class ResetPasswordRequest(BaseModel):
     token: str = Field(..., max_length=2048)
     new_password: str = Field(..., min_length=6)
 
+    @field_validator("new_password")
+    @classmethod
+    def new_password_complexity(cls, v: str) -> str:
+        return _validate_password_complexity(v)
+
 
 class LoginRequest(BaseModel):
     email: str
-    password: str
+    password: str = Field(..., min_length=1)
 
 
 class AuthUser(BaseModel):
@@ -39,7 +62,16 @@ class AuthUser(BaseModel):
 
 class AuthResponse(BaseModel):
     access_token: str
+    refresh_token: str
     user: AuthUser
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class AccessTokenResponse(BaseModel):
+    access_token: str
 
 
 # ============================================================

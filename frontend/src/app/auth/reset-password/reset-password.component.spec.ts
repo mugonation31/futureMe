@@ -160,4 +160,45 @@ describe('ResetPasswordComponent', () => {
     expect(errorEl!.textContent).toContain('This reset link is invalid or has already been used.');
     httpMock.verify();
   }));
+
+  // Test 15 (new): togglePasswordVisibility toggles showPassword for 'newPassword' field
+  it('should toggle showPassword["newPassword"] when togglePasswordVisibility is called with "newPassword"', async () => {
+    const { component, httpMock } = await createFixture('valid-token-abc');
+
+    // Arrange
+    expect(component.showPassword['newPassword']).toBeFalsy();
+
+    // Act
+    component.togglePasswordVisibility('newPassword');
+
+    // Assert
+    expect(component.showPassword['newPassword']).toBeTrue();
+
+    // Act again
+    component.togglePasswordVisibility('newPassword');
+
+    // Assert
+    expect(component.showPassword['newPassword']).toBeFalse();
+
+    httpMock.verify();
+  });
+
+  // Test 16 (new): togglePasswordVisibility toggles showPassword for 'confirmPassword' independently
+  it('should toggle showPassword["confirmPassword"] independently of showPassword["newPassword"]', async () => {
+    const { component, httpMock } = await createFixture('valid-token-abc');
+
+    // Arrange: toggle newPassword first
+    component.togglePasswordVisibility('newPassword');
+    expect(component.showPassword['newPassword']).toBeTrue();
+    expect(component.showPassword['confirmPassword']).toBeFalsy();
+
+    // Act
+    component.togglePasswordVisibility('confirmPassword');
+
+    // Assert: confirmPassword toggled, newPassword unchanged
+    expect(component.showPassword['confirmPassword']).toBeTrue();
+    expect(component.showPassword['newPassword']).toBeTrue();
+
+    httpMock.verify();
+  });
 });

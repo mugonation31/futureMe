@@ -19,6 +19,7 @@ export class LoginComponent implements OnInit {
   loading = false;
   errorMessage = '';
   resetSuccess = false;
+  showPassword: Record<string, boolean> = {};
 
   constructor(
     private authService: AuthService,
@@ -33,6 +34,10 @@ export class LoginComponent implements OnInit {
 
   ngOnInit() {
     this.resetSuccess = this.route.snapshot.queryParamMap.get('reset') === 'success';
+  }
+
+  togglePasswordVisibility(field: string): void {
+    this.showPassword[field] = !this.showPassword[field];
   }
 
   private validateForm(): boolean {

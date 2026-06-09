@@ -80,6 +80,17 @@ async def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     return _serialize_row(row) if row else None
 
 
+async def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+    """Return a user record by primary key, or None."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, email, display_name, created_at FROM users WHERE id = $1",
+            user_id,
+        )
+    return _serialize_row(row) if row else None
+
+
 async def create_password_reset_token(user_id: str, token_hash: str, expires_at: datetime) -> None:
     """Insert a password-reset token record."""
     pool = await get_pool()

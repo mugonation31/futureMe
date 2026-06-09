@@ -96,5 +96,53 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
       testMatch: ['**/settings/settings.spec.ts'],
     },
+
+    /**
+     * token-refresh project (SEC-1)
+     * ------------------------------
+     * Covers the JWT silent-refresh flow:
+     *   1. Login stores both fm_access_token and fm_refresh_token
+     *   2. Expired access token → interceptor refreshes silently, user stays on /dashboard
+     *   3. Logout clears both tokens from localStorage
+     *   4. Invalid refresh token → interceptor calls logout() + redirects to /login
+     *
+     * All API calls are mocked via page.route() — no live backend required.
+     * The Angular dev server must be running on E2E_BASE_URL (default: 4202).
+     *
+     * Run only this project with:
+     *   npx playwright test --project=token-refresh
+     */
+    {
+      name: 'token-refresh',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: ['**/auth/token-refresh.spec.ts'],
+    },
+
+    /**
+     * password-ux project (SEC-2)
+     * ----------------------------
+     * Covers password complexity validation and show/hide toggle UX across all
+     * three auth routes that contain password fields:
+     *
+     *   /login           — single password field with a show/hide toggle
+     *   /signup          — two independent toggles, password-rules hint list,
+     *                      and client-side complexity validation on submit
+     *   /reset-password  — two independent toggles and password-rules hint list
+     *
+     * All tests are pure DOM-interaction checks or client-side validation checks.
+     * No network requests are issued — no live backend is required.
+     * The Angular dev server must be running on AUTH_PAGES_BASE_URL (default: 4200).
+     *
+     * Run only this project with:
+     *   npx playwright test --project=password-ux
+     */
+    {
+      name: 'password-ux',
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: process.env['AUTH_PAGES_BASE_URL'] || 'http://localhost:4200',
+      },
+      testMatch: ['**/auth/password-ux.spec.ts'],
+    },
   ],
 });
