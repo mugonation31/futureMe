@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { SettingsService } from './settings.service';
 import { AuthService } from '../../core/services/auth.service';
-import { CompanySettings } from '../models/settings.model';
+import { UserSettings } from '../models/settings.model';
 import { environment } from '../../../environments/environment';
 
 describe('SettingsService', () => {
@@ -10,17 +10,11 @@ describe('SettingsService', () => {
   let httpMock: HttpTestingController;
   let mockAuthService: { getToken: jasmine.Spy };
 
-  const mockSettings: CompanySettings = {
-    id: 'settings-123',
-    company_name: 'My Company Ltd',
-    company_email: 'info@mycompany.com',
-    company_phone: '020-1234-5678',
-    bank_account_name: 'My Company Ltd',
-    bank_name: 'Barclays',
-    account_number: '12345678',
-    sort_code: '20-30-40',
-    iban: 'GB29NWBK60161331926819',
+  const mockSettings: UserSettings = {
     user_id: 'user-123',
+    display_name: 'Alice',
+    currency: 'GBP',
+    monthly_budget: 2000,
     created_at: '2026-01-15T10:00:00',
     updated_at: '2026-01-15T10:00:00',
   };
@@ -72,9 +66,9 @@ describe('SettingsService', () => {
   });
 
   it('should call PUT /api/settings with settings data on updateSettings()', (done: DoneFn) => {
-    const updateData: Partial<CompanySettings> = {
-      company_name: 'Updated Company',
-      bank_name: 'HSBC',
+    const updateData: Partial<UserSettings> = {
+      display_name: 'Bob',
+      currency: 'USD',
     };
 
     service.updateSettings(updateData).subscribe(settings => {

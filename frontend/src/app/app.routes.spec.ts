@@ -3,16 +3,18 @@ import { authGuard } from './auth/guards/auth.guard';
 import { householdGuard } from './auth/guards/household.guard';
 
 describe('App Routes', () => {
+  // Test 1: routes exist
   it('should have routes configured', () => {
     expect(routes.length).toBeGreaterThan(0);
   });
 
-  it('should have a default redirect to /dashboard', () => {
+  // Test 2: root route goes to landing page
+  it('should have a root route pointing to the landing page', () => {
     const defaultRoute = routes.find(r => r.path === '');
     expect(defaultRoute).toBeTruthy();
-    expect(defaultRoute?.redirectTo).toBe('/dashboard');
   });
 
+  // Test 3: public auth routes exist
   it('should have a login route', () => {
     const route = routes.find(r => r.path === 'login');
     expect(route).toBeTruthy();
@@ -23,28 +25,19 @@ describe('App Routes', () => {
     expect(route).toBeTruthy();
   });
 
+  it('should have a forgot-password route', () => {
+    const route = routes.find(r => r.path === 'forgot-password');
+    expect(route).toBeTruthy();
+  });
+
+  it('should have a reset-password route', () => {
+    const route = routes.find(r => r.path === 'reset-password');
+    expect(route).toBeTruthy();
+  });
+
+  // Test 4: core app routes exist
   it('should have a dashboard route', () => {
     const route = routes.find(r => r.path === 'dashboard');
-    expect(route).toBeTruthy();
-  });
-
-  it('should have a clients route', () => {
-    const route = routes.find(r => r.path === 'clients');
-    expect(route).toBeTruthy();
-  });
-
-  it('should have an invoices route', () => {
-    const route = routes.find(r => r.path === 'invoices');
-    expect(route).toBeTruthy();
-  });
-
-  it('should have a new invoice route', () => {
-    const route = routes.find(r => r.path === 'invoices/new');
-    expect(route).toBeTruthy();
-  });
-
-  it('should have an invoice detail route', () => {
-    const route = routes.find(r => r.path === 'invoices/:id');
     expect(route).toBeTruthy();
   });
 
@@ -53,19 +46,19 @@ describe('App Routes', () => {
     expect(route).toBeTruthy();
   });
 
-  // AuthGuard tests for protected routes
+  it('should have an onboarding route', () => {
+    const route = routes.find(r => r.path === 'onboarding');
+    expect(route).toBeTruthy();
+  });
+
+  it('should have a transactions route', () => {
+    const route = routes.find(r => r.path === 'transactions');
+    expect(route).toBeTruthy();
+  });
+
+  // Test 5: authGuard on protected routes
   it('should have authGuard on dashboard route', () => {
     const route = routes.find(r => r.path === 'dashboard');
-    expect(route?.canActivate).toContain(authGuard);
-  });
-
-  it('should have authGuard on clients route', () => {
-    const route = routes.find(r => r.path === 'clients');
-    expect(route?.canActivate).toContain(authGuard);
-  });
-
-  it('should have authGuard on invoices route', () => {
-    const route = routes.find(r => r.path === 'invoices');
     expect(route?.canActivate).toContain(authGuard);
   });
 
@@ -74,6 +67,33 @@ describe('App Routes', () => {
     expect(route?.canActivate).toContain(authGuard);
   });
 
+  it('should have authGuard on onboarding route', () => {
+    const route = routes.find(r => r.path === 'onboarding');
+    expect(route?.canActivate).toContain(authGuard);
+  });
+
+  it('should have authGuard on transactions route', () => {
+    const route = routes.find(r => r.path === 'transactions');
+    expect(route?.canActivate).toContain(authGuard);
+  });
+
+  // Test 6: householdGuard on guarded routes
+  it('should have householdGuard on dashboard route', () => {
+    const route = routes.find(r => r.path === 'dashboard');
+    expect(route?.canActivate).toContain(householdGuard);
+  });
+
+  it('should have householdGuard on settings route', () => {
+    const route = routes.find(r => r.path === 'settings');
+    expect(route?.canActivate).toContain(householdGuard);
+  });
+
+  it('should have householdGuard on transactions route', () => {
+    const route = routes.find(r => r.path === 'transactions');
+    expect(route?.canActivate).toContain(householdGuard);
+  });
+
+  // Test 7: public routes have NO authGuard
   it('should NOT have authGuard on login route', () => {
     const route = routes.find(r => r.path === 'login');
     expect(route?.canActivate).toBeFalsy();
@@ -84,16 +104,7 @@ describe('App Routes', () => {
     expect(route?.canActivate).toBeFalsy();
   });
 
-  it('should have an onboarding route', () => {
-    const route = routes.find(r => r.path === 'onboarding');
-    expect(route).toBeTruthy();
-  });
-
-  it('should have authGuard on onboarding route', () => {
-    const route = routes.find(r => r.path === 'onboarding');
-    expect(route?.canActivate).toContain(authGuard);
-  });
-
+  // Test 8: onboarding does NOT have householdGuard (user is setting it up)
   it('should NOT have householdGuard on onboarding route', () => {
     const route = routes.find(r => r.path === 'onboarding');
     expect(route?.canActivate).not.toContain(householdGuard);

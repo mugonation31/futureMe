@@ -2,11 +2,12 @@ import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { DashboardService, DashboardStats } from '../../services/dashboard.service';
+import { CurrencyFormatPipe } from '../../../core/pipes/currency-format.pipe';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, DecimalPipe, RouterLink],
+  imports: [CommonModule, DecimalPipe, RouterLink, CurrencyFormatPipe],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.scss'
 })
@@ -32,14 +33,20 @@ export class DashboardComponent implements OnInit {
       },
       error: (err) => {
         this.error = 'Failed to load dashboard. Please try again.';
-        console.error('Error loading dashboard:', err);
+        console.error('Dashboard load failed', err?.status);
         this.loading = false;
       }
     });
   }
 
-  formatCurrency(amount: number | undefined): string {
-    if (amount === undefined || amount === null) return '£0.00';
-    return '£' + amount.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  get remaining(): number {
+    if (!this.stats) return 0;
+    return Math.max(0, this.stats.remaining_budget);
   }
+
+  getBarWidth(spent: number): number {
+    if (!this.stats || this.stats.total_budget === 0) return 0;
+    return Math.min(100, (spent / this.stats.total_budget) * 100);
+  }
+
 }

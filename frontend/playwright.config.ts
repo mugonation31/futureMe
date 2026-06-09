@@ -63,5 +63,38 @@ export default defineConfig({
       },
       testMatch: ['**/smoke/auth-pages.spec.ts', '**/smoke/password-reset.spec.ts'],
     },
+
+    /**
+     * dashboard project
+     * -----------------
+     * Covers Tasks 27 (spending data / category breakdown) and 29 (currency pipe).
+     * All API calls are mocked via page.route() — no live backend required.
+     * The Angular dev server must be running on E2E_BASE_URL (default: 4201).
+     *
+     * Run only this project with:
+     *   npx playwright test --project=dashboard
+     */
+    {
+      name: 'dashboard',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: ['**/dashboard/dashboard.spec.ts'],
+    },
+
+    /**
+     * settings project
+     * ----------------
+     * Covers Tasks 28 (settings polish — success auto-dismiss, blank display_name)
+     * and 29 (currency change reflected on dashboard).
+     * All API calls are mocked via page.route() — no live backend required.
+     * The Angular dev server must be running on E2E_BASE_URL (default: 4201).
+     *
+     * Run only this project with:
+     *   npx playwright test --project=settings
+     */
+    {
+      name: 'settings',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: ['**/settings/settings.spec.ts'],
+    },
   ],
 });

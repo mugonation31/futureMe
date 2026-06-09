@@ -1,8 +1,10 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { RouterTestingModule } from '@angular/router/testing';
+import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { of } from 'rxjs';
 import { TransactionListComponent } from './transaction-list.component';
 import { TransactionService } from '../../services/transaction.service';
+import { SettingsService } from '../../../settings/services/settings.service';
 import { Transaction } from '../../models/transaction.model';
 
 const MOCK_EXPENSE: Transaction = {
@@ -42,6 +44,7 @@ describe('TransactionListComponent', () => {
     deleteTransaction: jasmine.Spy;
     createTransaction: jasmine.Spy;
   };
+  let mockSettingsService: { getSettings: jasmine.Spy };
 
   beforeEach(async () => {
     mockService = {
@@ -51,10 +54,17 @@ describe('TransactionListComponent', () => {
       createTransaction: jasmine.createSpy('createTransaction').and.returnValue(of(MOCK_EXPENSE)),
     };
 
+    mockSettingsService = {
+      getSettings: jasmine.createSpy('getSettings').and.returnValue(
+        of({ currency: 'GBP', display_name: null, monthly_budget: null })
+      ),
+    };
+
     await TestBed.configureTestingModule({
-      imports: [TransactionListComponent, RouterTestingModule],
+      imports: [TransactionListComponent, RouterTestingModule, HttpClientTestingModule],
       providers: [
         { provide: TransactionService, useValue: mockService },
+        { provide: SettingsService, useValue: mockSettingsService },
       ],
     }).compileComponents();
 

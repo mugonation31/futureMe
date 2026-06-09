@@ -3,7 +3,7 @@ import { ReactiveFormsModule } from '@angular/forms';
 import { of, throwError } from 'rxjs';
 import { SettingsPageComponent } from './settings-page.component';
 import { SettingsService } from '../../services/settings.service';
-import { CompanySettings } from '../../models/settings.model';
+import { UserSettings } from '../../models/settings.model';
 
 describe('SettingsPageComponent', () => {
   let component: SettingsPageComponent;
@@ -13,17 +13,11 @@ describe('SettingsPageComponent', () => {
     updateSettings: jasmine.Spy;
   };
 
-  const mockSettings: CompanySettings = {
-    id: 'settings-123',
-    company_name: 'My Company Ltd',
-    company_email: 'info@mycompany.com',
-    company_phone: '020-1234-5678',
-    bank_account_name: 'My Company Ltd',
-    bank_name: 'Barclays',
-    account_number: '12345678',
-    sort_code: '20-30-40',
-    iban: 'GB29NWBK60161331926819',
+  const mockSettings: UserSettings = {
     user_id: 'user-123',
+    display_name: 'Alice',
+    currency: 'GBP',
+    monthly_budget: 2000,
     created_at: '2026-01-15T10:00:00',
     updated_at: '2026-01-15T10:00:00',
   };
@@ -46,29 +40,25 @@ describe('SettingsPageComponent', () => {
     fixture.detectChanges();
   });
 
-  // Test 9: should create the component
+  // Test 1: should create the component
   it('should create', () => {
     expect(component).toBeTruthy();
   });
 
-  // Test 10: should have company details and payment details form sections
-  it('should have company details and payment details form groups', () => {
-    expect(component.settingsForm.get('company_name')).toBeTruthy();
-    expect(component.settingsForm.get('company_email')).toBeTruthy();
-    expect(component.settingsForm.get('company_phone')).toBeTruthy();
-    expect(component.settingsForm.get('bank_account_name')).toBeTruthy();
-    expect(component.settingsForm.get('bank_name')).toBeTruthy();
-    expect(component.settingsForm.get('account_number')).toBeTruthy();
-    expect(component.settingsForm.get('sort_code')).toBeTruthy();
-    expect(component.settingsForm.get('iban')).toBeTruthy();
+  // Test 2: should have futureMe settings form fields
+  it('should have display_name, currency, and monthly_budget form controls', () => {
+    expect(component.settingsForm.get('display_name')).toBeTruthy();
+    expect(component.settingsForm.get('currency')).toBeTruthy();
+    expect(component.settingsForm.get('monthly_budget')).toBeTruthy();
   });
 
-  // Test 11: should call updateSettings on form submit
+  // Test 3: should call updateSettings on form submit
   it('should call updateSettings on form submit', () => {
     // Arrange
     component.settingsForm.patchValue({
-      company_name: 'Updated Company',
-      bank_name: 'HSBC',
+      display_name: 'Bob',
+      currency: 'USD',
+      monthly_budget: 3000,
     });
 
     // Act
@@ -78,32 +68,36 @@ describe('SettingsPageComponent', () => {
     expect(mockSettingsService.updateSettings).toHaveBeenCalled();
   });
 
-  // Test 12: should show success message after save
+  // Test 4: should show success message after save
   it('should show success message after save', fakeAsync(() => {
     // Arrange
-    component.settingsForm.patchValue({ company_name: 'Test' });
+    component.settingsForm.patchValue({ display_name: 'Test' });
 
     // Act
     component.onSave();
     tick();
 
-    // Assert
+    // Assert — message is visible immediately after save
     expect(component.successMessage).toBeTruthy();
+
+    // Drain the 3-second auto-dismiss timer so the zone is clean
+    tick(3000);
   }));
 
-  // Test 13: should load existing settings on init
+  // Test 5: should load existing settings on init
   it('should load existing settings on init', () => {
     // Assert - settings should be loaded from service
     expect(mockSettingsService.getSettings).toHaveBeenCalled();
-    expect(component.settingsForm.get('company_name')?.value).toBe('My Company Ltd');
-    expect(component.settingsForm.get('bank_name')?.value).toBe('Barclays');
+    expect(component.settingsForm.get('display_name')?.value).toBe('Alice');
+    expect(component.settingsForm.get('currency')?.value).toBe('GBP');
+    expect(component.settingsForm.get('monthly_budget')?.value).toBe(2000);
   });
 
-  // Test 14: should show error message on save failure
+  // Test 6: should show error message on save failure
   it('should show error message on save failure', fakeAsync(() => {
     // Arrange
     mockSettingsService.updateSettings.and.returnValue(throwError(() => new Error('Save failed')));
-    component.settingsForm.patchValue({ company_name: 'Test' });
+    component.settingsForm.patchValue({ display_name: 'Test' });
 
     // Act
     component.onSave();
@@ -112,4 +106,33 @@ describe('SettingsPageComponent', () => {
     // Assert
     expect(component.errorMessage).toBeTruthy();
   }));
+
+  // Test 7 (Task 28): success message auto-dismisses after 3 seconds
+  it('should auto-dismiss success message after 3 seconds', fakeAsync(() => {
+    // Arrange
+    component.settingsForm.patchValue({ display_name: 'Test' });
+
+    // Act
+    component.onSave();
+    tick();
+    expect(component.successMessage).toBeTruthy(); // visible immediately
+
+    tick(3000); // advance 3 seconds
+
+    // Assert
+    expect(component.successMessage).toBe('');
+  }));
+
+  // Test 8 (Task 28): updateSettings should not include null fields
+  it('should filter out null values before calling updateSettings', () => {
+    // Arrange: only display_name is filled; monthly_budget is null
+    component.settingsForm.setValue({ display_name: 'Carol', currency: 'GBP', monthly_budget: null });
+
+    // Act
+    component.onSave();
+
+    // Assert: the payload passed to updateSettings should not have monthly_budget key (or have it as undefined)
+    const callArg = mockSettingsService.updateSettings.calls.mostRecent().args[0];
+    expect(callArg).not.toEqual(jasmine.objectContaining({ monthly_budget: null }));
+  });
 });

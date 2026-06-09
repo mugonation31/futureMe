@@ -1,18 +1,26 @@
 import { TestBed } from '@angular/core/testing';
 import { Router, ActivatedRouteSnapshot, RouterStateSnapshot } from '@angular/router';
+import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { of, throwError } from 'rxjs';
 import { householdGuard } from './household.guard';
 import { HouseholdService } from '../../household/services/household.service';
+import { AuthService } from '../../core/services/auth.service';
 
 describe('householdGuard', () => {
-  let mockHouseholdService: { getMyHousehold: jasmine.Spy };
+  let mockHouseholdService: { getMyHousehold: jasmine.Spy; currentHousehold$: { value: any } };
+  let mockAuthService: { isAuthenticated: jasmine.Spy };
   let mockRouter: { navigate: jasmine.Spy };
   let mockRoute: ActivatedRouteSnapshot;
   let mockState: RouterStateSnapshot;
 
   beforeEach(() => {
     mockHouseholdService = {
-      getMyHousehold: jasmine.createSpy('getMyHousehold')
+      getMyHousehold: jasmine.createSpy('getMyHousehold'),
+      currentHousehold$: { value: null },
+    };
+
+    mockAuthService = {
+      isAuthenticated: jasmine.createSpy('isAuthenticated').and.returnValue(true),
     };
 
     mockRouter = {
@@ -23,8 +31,10 @@ describe('householdGuard', () => {
     mockState = { url: '/dashboard' } as RouterStateSnapshot;
 
     TestBed.configureTestingModule({
+      imports: [HttpClientTestingModule],
       providers: [
         { provide: HouseholdService, useValue: mockHouseholdService },
+        { provide: AuthService, useValue: mockAuthService },
         { provide: Router, useValue: mockRouter }
       ]
     });
@@ -70,20 +80,17 @@ describe('householdGuard', () => {
     });
   });
 
-  // Test 3: should not redirect when user already on /onboarding
-  it('should not redirect when user already on /onboarding', (done) => {
-    // Arrange: no household AND already on setup page
+  // Test 3: should redirect to /onboarding regardless of current url when no household
+  it('should redirect to /onboarding regardless of current url when no household', (done) => {
     mockHouseholdService.getMyHousehold.and.returnValue(throwError(() => ({ status: 404 })));
-    mockState = { url: '/onboarding' } as RouterStateSnapshot;
+    mockState = { url: '/settings' } as RouterStateSnapshot;
 
-    // Act: run the guard
     TestBed.runInInjectionContext(() => {
       const result = householdGuard(mockRoute, mockState);
       if (result instanceof Object && 'subscribe' in result) {
         (result as any).subscribe((allowed: boolean) => {
-          // Assert
-          expect(allowed).toBeTrue();
-          expect(mockRouter.navigate).not.toHaveBeenCalled();
+          expect(allowed).toBeFalse();
+          expect(mockRouter.navigate).toHaveBeenCalledWith(['/onboarding']);
           done();
         });
       }

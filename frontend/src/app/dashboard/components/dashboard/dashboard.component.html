@@ -12,22 +12,55 @@
   </div>
 
   <div *ngIf="!loading && stats" class="dashboard-content">
+    <!-- Zero-budget CTA -->
+    <div *ngIf="stats.total_budget === 0" data-testid="zero-budget-cta" class="cta-card">
+      <p>You have not set a monthly budget yet.</p>
+      <a routerLink="/settings" class="btn-primary">Set your budget in Settings</a>
+    </div>
+
+    <!-- Stat cards -->
     <div class="stats-grid">
-      <div class="stat-card stat-budget">
-        <span class="stat-value">{{ formatCurrency(stats.total_budget) }}</span>
+      <div class="stat-card" data-testid="stat-card">
+        <span class="stat-value">{{ stats.total_budget | appCurrency }}</span>
         <span class="stat-label">Monthly Budget</span>
       </div>
-      <div class="stat-card stat-spent">
-        <span class="stat-value">{{ formatCurrency(stats.total_spent) }}</span>
+      <div class="stat-card" data-testid="stat-card">
+        <span class="stat-value">{{ stats.total_spent | appCurrency }}</span>
         <span class="stat-label">Spent</span>
       </div>
-      <div class="stat-card stat-remaining">
-        <span class="stat-value">{{ formatCurrency(stats.remaining_budget) }}</span>
+      <div class="stat-card" data-testid="stat-card">
+        <span class="stat-value" data-testid="stat-remaining">{{ remaining | appCurrency }}</span>
         <span class="stat-label">Remaining</span>
       </div>
-      <div class="stat-card stat-savings">
+      <div class="stat-card" data-testid="stat-card">
         <span class="stat-value">{{ stats.savings_rate | number:'1.0-1' }}%</span>
         <span class="stat-label">Savings Rate</span>
+      </div>
+    </div>
+
+    <!-- Category breakdown -->
+    <div class="breakdown-section">
+      <h2>Spending by Category</h2>
+
+      <!-- Empty state — budget set but no transactions -->
+      <div *ngIf="stats.total_budget > 0 && stats.category_breakdown.length === 0"
+           data-testid="empty-transactions"
+           class="cta-card">
+        <p>No transactions this month.</p>
+        <a routerLink="/transactions" class="btn-primary">Add your first transaction</a>
+      </div>
+
+      <div *ngFor="let row of stats.category_breakdown"
+           data-testid="category-row"
+           class="category-row">
+        <span class="category-name">{{ row.category_name }}</span>
+        <span class="category-spent">{{ row.spent | appCurrency }}</span>
+        <div class="progress-bar-track" *ngIf="stats.total_budget > 0">
+          <div class="progress-bar-fill"
+               [style.width.%]="getBarWidth(row.spent)"
+               [class.over-budget]="row.spent >= stats.total_budget * 0.9">
+          </div>
+        </div>
       </div>
     </div>
 
@@ -35,6 +68,7 @@
       <h2>Quick Actions</h2>
       <div class="actions-grid">
         <a routerLink="/settings" class="action-btn action-settings">Settings</a>
+        <a routerLink="/transactions" class="action-btn">Transactions</a>
       </div>
     </div>
   </div>

@@ -4,11 +4,17 @@ import { Observable } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { environment } from '../../../environments/environment';
 
+export interface CategorySpend {
+  category_name: string;
+  spent: number;
+}
+
 export interface DashboardStats {
-  total_budget?: number;
-  total_spent?: number;
-  remaining_budget?: number;
-  savings_rate?: number;
+  total_budget: number;
+  total_spent: number;
+  remaining_budget: number;
+  savings_rate: number;
+  category_breakdown: CategorySpend[];
 }
 
 @Injectable({ providedIn: 'root' })

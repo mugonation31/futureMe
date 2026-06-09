@@ -53,10 +53,16 @@ export class SettingsPageComponent implements OnInit {
     this.errorMessage = '';
     this.loading = true;
 
-    this.settingsService.updateSettings(this.settingsForm.value).subscribe({
+    const rawValue = this.settingsForm.value as Partial<UserSettings>;
+    const payload = Object.fromEntries(
+      Object.entries(rawValue).filter(([, v]) => v !== null && v !== undefined && v !== '')
+    ) as Partial<UserSettings>;
+
+    this.settingsService.updateSettings(payload).subscribe({
       next: () => {
         this.successMessage = 'Settings saved successfully';
         this.loading = false;
+        setTimeout(() => { this.successMessage = ''; }, 3000);
       },
       error: () => {
         this.errorMessage = 'Failed to save settings. Please try again.';

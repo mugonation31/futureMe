@@ -153,6 +153,51 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 
 ---
 
+## 2026-06-09 — Currency pipe: pure pipe + async internal state = stale first render
+
+**What happened:** A `CurrencyPipe` fetched user settings asynchronously in its constructor and stored the currency code in a class field. On first render, the field was still `null`, so the pipe fell back to a default currency. Angular never re-invoked `transform()` after the subscription resolved because the pipe's input hadn't changed.
+**Why:** `pure: true` (the default) means Angular only re-runs `transform()` when the pipe's *input reference* changes. A mutation to an internal class field is invisible to Angular's change detection. The async fetch completed too late.
+**Next time:** Never rely on async internal state inside a pure pipe. The correct fix is a route resolver that fetches settings before the component activates — settings are then synchronously available when `transform()` first runs. Do not switch to `pure: false` as a workaround — it runs on every change detection cycle and is an anti-pattern.
+**Tags:** angular, pipes, async, settings
+
+---
+
+## 2026-06-09 — shareReplay(1) + null-invalidation for service-level caching
+
+**What happened:** `SettingsService.getSettings()` was called by multiple consumers (a pipe, multiple components) on the same page. Each call triggered a separate HTTP request because the service returned a new observable each time.
+**Why:** Without caching, the same endpoint is hit once per subscriber. With `shareReplay(1)`, the first subscriber triggers the request; all subsequent subscribers receive the cached value immediately.
+**Next time:** For any service method that is called by more than one consumer and returns stable data: (1) store the observable as a class field; (2) add `shareReplay(1)`; (3) in the corresponding mutation method (`updateSettings()`), set the cached field to `null` so the next `getSettings()` call re-fetches. This eliminates N simultaneous HTTP calls at zero cost to callers.
+**Tags:** angular, rxjs, performance, caching
+
+---
+
+## 2026-06-09 — Empty-string filter required in null-guard PATCH patterns
+
+**What happened:** A PATCH handler filtered form values with `v !== null && v !== undefined` before building the request body. Empty strings passed the check and overwrote existing DB values.
+**Why:** `'' !== null` is `true`. The intent of the guard was "only send fields the user actually changed," but an empty string is a real, typed value that the user may have cleared — or may have left blank because the field was never touched. Without filtering `''`, cleared but never-focused inputs silently overwrite persisted data.
+**Next time:** The correct filter for "omit untouched fields before a PATCH" is `v !== null && v !== undefined && v !== ''`. Apply this to every object spread/reduce that constructs a partial update body. If an empty string is a valid intentional value for a field, filter on `v !== null && v !== undefined` only and document that choice explicitly.
+**Tags:** angular, forms, api, data-integrity
+
+---
+
+## 2026-06-09 — Dead auth guard branches are a security maintenance risk
+
+**What happened:** A route guard contained `if (state.url === '/onboarding') return true` — a branch that was never reachable because that guard was never applied to the `/onboarding` route. The branch was harmless today but created a risk: a future route-config change could accidentally make it reachable, silently bypassing auth for onboarding.
+**Why:** Dead branches accumulate when guards evolve. The original condition was meaningful when written but became unreachable after a route config change. No one removed it because it did not cause a visible failure.
+**Next time:** When reviewing or modifying a route guard, check every conditional branch against the actual route config. If a branch can never be entered (because the guard is never applied to the url it tests), remove it immediately. Treat dead guard branches as bugs, not dead code.
+**Tags:** angular, routing, security, guards
+
+---
+
+## 2026-06-09 — takeUntilDestroyed() is required for constructor-level subscriptions in pipes
+
+**What happened:** A standalone pipe subscribed to a settings observable in its constructor. Without `takeUntilDestroyed(this.destroyRef)`, the subscription remained active after the component using the pipe was destroyed. If the observable emitted after destruction, the pipe tried to update a destroyed view.
+**Why:** Pipes are instantiated per component by Angular's DI system. A constructor subscription in a pipe has the same lifecycle as a component subscription — it must be cleaned up when the view is torn down. The pipe's class structure makes this easy to miss because pipes feel more like stateless functions than stateful components.
+**Next time:** Any pipe that creates a subscription in its constructor must inject `DestroyRef` and attach `takeUntilDestroyed(this.destroyRef)` to the observable. The pattern: `constructor(private destroyRef: DestroyRef) { service.getData().pipe(takeUntilDestroyed(this.destroyRef)).subscribe(...) }`.
+**Tags:** angular, rxjs, pipes, memory-leaks
+
+---
+
 ## 2026-06-08 — TS4114: `noImplicitOverride` is enabled and applies to E2E page objects
 
 **What happened:** Page-object subclasses (`LoginPage`, `SignupPage`) defined a `goto()` method that overrides `BasePage.goto()` without the `override` keyword. The TypeScript compiler emitted TS4114 ("This member must have an 'override' modifier because it overrides a member in the base class 'BasePage'"). The error only surfaced when the page objects were compiled together, not during initial authoring.

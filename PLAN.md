@@ -353,7 +353,7 @@ Delivers the core budgeting loop: set a budget → log expenses/income with cate
     - Active route highlights the link via `routerLinkActive`
     - No other nav links are broken
 
-- [ ] **Task 27 — Frontend + backend: dashboard with real spending data** (Size: M)
+- [x] **Task 27 — Frontend + backend: dashboard with real spending data** (Size: M)
   - **Description**: Extend `DashboardStats` in `backend/models.py` to include `category_breakdown: list[CategorySpend]` (already added in Task 21). Update `backend/database.get_dashboard_stats` to compute per-category spending with GROUP BY. Update `frontend/src/app/dashboard/services/dashboard.service.ts` `DashboardStats` interface to add `category_breakdown: CategorySpend[]`. Update `DashboardComponent` template to: (a) render a "Spending by category" section below the top four stat cards — one row per category with a progress bar and spent amount; (b) if `total_budget === 0`, show a CTA card linking to `/settings`; (c) if no transactions, show an empty state card linking to `/transactions`. Fix `remaining_budget` to floor at 0. Fix `savings_rate` to use `((total_budget - total_spent) / total_budget) * 100` when budget > 0, else 0.
   - **Depends on**: Task 23, Task 25
   - **Files**: `backend/models.py`, `backend/database.py`, `backend/main.py`, `frontend/src/app/dashboard/services/dashboard.service.ts`, `frontend/src/app/dashboard/components/dashboard/dashboard.component.ts`, `frontend/src/app/dashboard/components/dashboard/dashboard.component.html`, `frontend/src/app/dashboard/components/dashboard/dashboard.component.scss`
@@ -366,7 +366,7 @@ Delivers the core budgeting loop: set a budget → log expenses/income with cate
     - Zero-budget state shows CTA linking to `/settings`
     - Zero-transactions state shows empty state linking to `/transactions`
 
-- [ ] **Task 28 — Backend + frontend: settings end-to-end polish** (Size: S)
+- [x] **Task 28 — Backend + frontend: settings end-to-end polish** (Size: S)
   - **Description**: Fix two known gaps: (1) `backend/database.py` functions `get_user_settings` and `get_dashboard_stats` call `conn = await get_pool()` and use `conn` directly as a connection — replace with `async with pool.acquire() as conn` to be consistent and safe under concurrent load. (2) Frontend `SettingsService.updateSettings` currently sends the full form payload including null fields — filter out null/undefined values before sending so partial updates do not overwrite existing DB values with null. Add a 3-second auto-dismiss to the `successMessage` in `SettingsPageComponent` using `setTimeout`.
   - **Depends on**: None
   - **Files**: `backend/database.py`, `frontend/src/app/settings/services/settings.service.ts`, `frontend/src/app/settings/components/settings-page/settings-page.component.ts`
@@ -376,7 +376,7 @@ Delivers the core budgeting loop: set a budget → log expenses/income with cate
     - Success message auto-dismisses after 3 seconds
     - No regressions in existing settings tests
 
-- [ ] **Task 29 — Frontend: currency-aware formatting pipe** (Size: S)
+- [x] **Task 29 — Frontend: currency-aware formatting pipe** (Size: S)
   - **Description**: Create `frontend/src/app/core/pipes/currency-format.pipe.ts` as a standalone Angular pipe (`appCurrency`). Injects `SettingsService`, reads current currency (GBP→£, USD→$, EUR→€, fallback to the code itself), and formats numbers as `symbol + value.toLocaleString(locale, {minimumFractionDigits:2, maximumFractionDigits:2})`. Returns `'--'` for null/undefined input. Replace the hardcoded `'£' + ...toLocaleString('en-GB', ...)` logic in `DashboardComponent.formatCurrency()` with this pipe. Apply the pipe to transaction amounts in `TransactionListComponent`.
   - **Depends on**: Task 27, Task 25
   - **Files**: `frontend/src/app/core/pipes/currency-format.pipe.ts` (new), `frontend/src/app/dashboard/components/dashboard/dashboard.component.ts`, `frontend/src/app/dashboard/components/dashboard/dashboard.component.html`, `frontend/src/app/transactions/components/transaction-list/transaction-list.component.html`

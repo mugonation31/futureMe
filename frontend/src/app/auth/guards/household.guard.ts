@@ -5,7 +5,7 @@ import { HouseholdService } from '../../household/services/household.service';
 import { map, catchError } from 'rxjs/operators';
 import { of } from 'rxjs';
 
-export const householdGuard: CanActivateFn = (_route, _state) => {
+export const householdGuard: CanActivateFn = (_route, state) => {
   const authService = inject(AuthService);
   const householdService = inject(HouseholdService);
   const router = inject(Router);

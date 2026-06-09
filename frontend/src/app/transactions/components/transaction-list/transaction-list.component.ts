@@ -3,11 +3,12 @@ import { CommonModule } from '@angular/common';
 import { TransactionService } from '../../services/transaction.service';
 import { Transaction } from '../../models/transaction.model';
 import { TransactionFormComponent } from '../transaction-form/transaction-form.component';
+import { CurrencyFormatPipe } from '../../../core/pipes/currency-format.pipe';
 
 @Component({
   selector: 'app-transaction-list',
   standalone: true,
-  imports: [CommonModule, TransactionFormComponent],
+  imports: [CommonModule, TransactionFormComponent, CurrencyFormatPipe],
   templateUrl: './transaction-list.component.html',
   styleUrls: ['./transaction-list.component.scss'],
 })

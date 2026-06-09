@@ -37,7 +37,7 @@
         <td>
           <span [class.amount-expense]="t.type === 'expense'"
                 [class.amount-income]="t.type === 'income'">
-            {{ t.amount | number:'1.2-2' }}
+            {{ t.amount | appCurrency }}
           </span>
         </td>
         <td>
