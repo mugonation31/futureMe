@@ -13,7 +13,8 @@ import { AuthService } from '../../core/services/auth.service';
   styleUrl: './signup.component.scss'
 })
 export class SignupComponent {
-  name = '';
+  firstName = '';
+  lastName = '';
   email = '';
   password = '';
   confirmPassword = '';
@@ -44,12 +45,16 @@ export class SignupComponent {
 
   private validateForm(): boolean {
     this.errorMessage = '';
-    if (!this.name || !this.email || !this.password || !this.confirmPassword) {
-      this.errorMessage = 'Please fill in all fields';
+    if (!this.firstName.trim()) {
+      this.errorMessage = 'First name is required';
       return false;
     }
-    if (this.name.trim().length < 2) {
-      this.errorMessage = 'Name must be at least 2 characters';
+    if (!this.lastName.trim()) {
+      this.errorMessage = 'Last name is required';
+      return false;
+    }
+    if (!this.email || !this.password || !this.confirmPassword) {
+      this.errorMessage = 'Please fill in all fields';
       return false;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.email)) {
@@ -76,7 +81,7 @@ export class SignupComponent {
     this.loading = true;
     this.errorMessage = '';
     try {
-      await firstValueFrom(this.authService.register(this.email, this.password, this.name));
+      await firstValueFrom(this.authService.register(this.email, this.password, this.firstName, this.lastName));
       this.router.navigate(['/onboarding']);
     } catch (error: any) {
       this.errorMessage = error.error?.detail || 'Registration failed. Please try again.';

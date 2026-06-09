@@ -29,7 +29,18 @@ def _validate_password_complexity(v: str) -> str:
 class RegisterRequest(BaseModel):
     email: str = Field(..., min_length=3, max_length=254)
     password: str = Field(..., min_length=6)
-    name: str = Field(..., min_length=1, max_length=100)
+    first_name: str = Field(..., min_length=1, max_length=100)
+    last_name: str = Field(..., min_length=1, max_length=100)
+
+    @field_validator("first_name", "last_name")
+    @classmethod
+    def names_must_not_be_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("must not be blank or whitespace-only")
+        bidi = set(range(0x202A, 0x202F)) | set(range(0x2066, 0x206A))
+        if any(ord(c) in bidi or ord(c) == 0 for c in v):
+            raise ValueError("contains invalid characters")
+        return v
 
     @field_validator("password")
     @classmethod

@@ -605,3 +605,50 @@ Two immediate tasks: (1) raise auth and landing SCSS to production quality by re
     - `python3 -c "from passlib.hash import bcrypt; bcrypt.hash('test')"` succeeds inside the venv
     - `uvicorn main:app --reload --port 8002` logs "Application startup complete"
     - `GET http://localhost:8002/health` returns `{"status": "OK"}`
+
+---
+
+## Feature: Split Name — First Name + Last Name
+
+### Overview
+
+Replaces the single `name` field on registration with separate `first_name` and `last_name` fields, propagated through the DB schema, backend API, and frontend signup form. `display_name` is derived server-side and remains the canonical greeting value downstream.
+
+---
+
+- [ ] **Task 41 — DB migration: add first_name and last_name columns to users** (Size: S)
+  - **Description**: Create migration file `20260609000009_users_split_name.sql`. Add `first_name text` and `last_name text` columns (both nullable) to the `users` table. Do not alter or drop `display_name`.
+  - **Depends on**: None
+  - **Files**: `migrations/migrations/20260609000009_users_split_name.sql` (new)
+  - **Acceptance criteria**:
+    - `users` table gains `first_name text` and `last_name text` (nullable)
+    - `display_name` column is untouched
+    - Existing rows unaffected
+
+- [ ] **Task 42 — Backend: split RegisterRequest and update create_user** (Size: S)
+  - **Description**: Replace `name: str` on `RegisterRequest` with `first_name` and `last_name` (each `Field(..., min_length=1, max_length=100)`). Update `create_user()` signature to accept `first_name` and `last_name`, derive `display_name = f"{first_name.strip()} {last_name.strip()}"` inside the function, insert all three. Update `main.py` to call `db.create_user(body.email, body.password, body.first_name, body.last_name)`.
+  - **Depends on**: Task 41
+  - **Files**: `backend/models.py`, `backend/database.py`, `backend/main.py`
+  - **Acceptance criteria**:
+    - `POST /api/auth/register` with `first_name`+`last_name` returns HTTP 201
+    - Missing either field returns HTTP 422
+    - Stored `display_name` equals trimmed `first_name + ' ' + last_name`
+    - JWT `display_name` claim populated correctly
+
+- [ ] **Task 43 — Backend: update tests for new RegisterRequest shape** (Size: S)
+  - **Description**: Replace all `name` field references in registration test payloads with `first_name`/`last_name`. Update `create_user` mock return dicts. All tests must pass.
+  - **Depends on**: Task 42
+  - **Files**: `backend/tests/test_token_refresh.py`, `backend/tests/test_password_complexity.py`, any other test touching registration
+  - **Acceptance criteria**:
+    - `pytest` passes with no failures
+    - No test references old `name` field on registration payload
+
+- [ ] **Task 44 — Frontend: split Full Name into First Name + Last Name on signup** (Size: S)
+  - **Description**: Replace single `name` field with `firstName`/`lastName` in the signup component. Add two form inputs (First Name, Last Name). Update `authService.register()` signature to `(email, password, firstName, lastName)` and POST body to `{ email, password, first_name: firstName, last_name: lastName }`.
+  - **Depends on**: Task 42
+  - **Files**: `frontend/src/app/auth/signup/signup.component.ts`, `frontend/src/app/auth/signup/signup.component.html`, `frontend/src/app/core/services/auth.service.ts`
+  - **Acceptance criteria**:
+    - Form shows two inputs: "First Name" and "Last Name" — no "Full Name" input remains
+    - Submitting empty first or last name shows validation error
+    - Successful registration POSTs `{ first_name, last_name, email, password }`
+    - Nav greeting and downstream `display_name` usages unaffected

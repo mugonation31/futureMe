@@ -145,11 +145,11 @@ async def test_register_returns_refresh_token():
             # Act
             response = await client.post(
                 "/api/auth/register",
-                json={"email": "sec1@example.com", "password": "Password1@", "name": "SEC1 User"},
+                json={"email": "sec1@example.com", "password": "Password1@", "first_name": "SEC1", "last_name": "User"},
             )
 
     # Assert
-    assert response.status_code == 200
+    assert response.status_code == 201
     body = response.json()
     assert "refresh_token" in body
     assert isinstance(body["refresh_token"], str)

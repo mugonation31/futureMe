@@ -65,7 +65,7 @@ async def test_register_rejects_password_without_digit():
         # Act
         response = await client.post(
             "/api/auth/register",
-            json={"email": "user@example.com", "password": "NoDigit!@#", "name": "Test User"},
+            json={"email": "user@example.com", "password": "NoDigit!@#", "first_name": "Test", "last_name": "User"},
         )
 
     # Assert
@@ -87,7 +87,7 @@ async def test_register_rejects_password_without_special_char():
         # Act
         response = await client.post(
             "/api/auth/register",
-            json={"email": "user@example.com", "password": "NoSpecial123", "name": "Test User"},
+            json={"email": "user@example.com", "password": "NoSpecial123", "first_name": "Test", "last_name": "User"},
         )
 
     # Assert
@@ -109,7 +109,7 @@ async def test_register_rejects_password_missing_both():
         # Act
         response = await client.post(
             "/api/auth/register",
-            json={"email": "user@example.com", "password": "NoDigitOrSpecial", "name": "Test User"},
+            json={"email": "user@example.com", "password": "NoDigitOrSpecial", "first_name": "Test", "last_name": "User"},
         )
 
     # Assert
@@ -125,7 +125,7 @@ async def test_register_rejects_password_missing_both():
 
 @pytest.mark.asyncio
 async def test_register_accepts_valid_complex_password():
-    """should return 200 when registering with a password that has digit and special character"""
+    """should return 201 when registering with a password that has digit and special character"""
     # Arrange
     app = _get_app()
 
@@ -139,11 +139,11 @@ async def test_register_accepts_valid_complex_password():
             # Act
             response = await client.post(
                 "/api/auth/register",
-                json={"email": "user@example.com", "password": "Valid1@password", "name": "Test User"},
+                json={"email": "user@example.com", "password": "Valid1@password", "first_name": "Test", "last_name": "User"},
             )
 
     # Assert
-    assert response.status_code == 200
+    assert response.status_code == 201
 
 
 # ============================================================

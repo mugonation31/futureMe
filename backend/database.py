@@ -52,17 +52,22 @@ async def close_pool():
 # User auth CRUD
 # ============================================================
 
-async def create_user(email: str, password: str, display_name: str) -> Dict[str, Any]:
+async def create_user(email: str, password: str, first_name: str, last_name: str) -> Dict[str, Any]:
+    fn = first_name.strip()
+    ln = last_name.strip()
+    display_name = f"{fn} {ln}"
     password_hash = hash_password(password)
     pool = await get_pool()
     async with pool.acquire() as conn:
         try:
             row = await conn.fetchrow(
-                """INSERT INTO users (email, password_hash, display_name)
-                   VALUES ($1, $2, $3)
-                   RETURNING id, email, display_name, created_at""",
+                """INSERT INTO users (email, password_hash, first_name, last_name, display_name)
+                   VALUES ($1, $2, $3, $4, $5)
+                   RETURNING id, email, first_name, last_name, display_name, created_at""",
                 email.lower().strip(),
                 password_hash,
+                fn,
+                ln,
                 display_name,
             )
         except asyncpg.UniqueViolationError:

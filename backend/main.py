@@ -82,10 +82,10 @@ def health_check():
 # Auth endpoints
 # ============================================================
 
-@app.post("/api/auth/register", response_model=AuthResponse)
+@app.post("/api/auth/register", response_model=AuthResponse, status_code=201)
 async def register(body: RegisterRequest):
     try:
-        user = await db.create_user(body.email, body.password, body.name)
+        user = await db.create_user(body.email, body.password, body.first_name, body.last_name)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     token = _create_access_token(user["id"], user["email"], user.get("display_name"))
