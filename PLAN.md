@@ -449,7 +449,7 @@ Adds per-category monthly spending limits so the dashboard category breakdown ca
 
 ---
 
-- [ ] **Task 30 — DB migration: category_budgets table** (Size: S)
+- [x] **Task 30 — DB migration: category_budgets table** (Size: S)
   - **Description**: Create `supabase/migrations/20260608000006_category_budgets.sql`. Define `category_budgets` (id uuid PK default gen_random_uuid(), household_id uuid NOT NULL REFERENCES households(id) ON DELETE CASCADE, category_id uuid NOT NULL REFERENCES budget_categories(id) ON DELETE CASCADE, monthly_limit numeric(12,2) NOT NULL CHECK (monthly_limit > 0), created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(), UNIQUE (household_id, category_id)). Add the `updated_at` auto-update trigger using the existing `set_updated_at()` function. Add an index on `category_budgets(household_id)`.
   - **Depends on**: Task 19 (budget_categories must exist)
   - **Files**: `supabase/migrations/20260608000006_category_budgets.sql` (new)

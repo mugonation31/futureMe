@@ -302,3 +302,21 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 **Tags:** testing, cors, fastapi, test-isolation
 
 ---
+
+## 2026-06-09 — Task 30: migration test pattern, RLS omission comment, and pre-existing test debt
+
+**What happened:** Three project conventions surfaced during Task 30 (category_budgets migration): (1) This project uses static SQL-parsing tests — no live DB — for all migration validation. The established pattern is `tests/test_password_reset_tokens_migration.py`. (2) A pytest fixture that returns `""` on `FileNotFoundError` causes all 10+ downstream tests to fail with misleading assertion messages ("expected 'CREATE TABLE' in sql") instead of one clear failure pointing at the missing file. (3) RLS is intentionally absent from all tables due to Neon compatibility, documented in `20260608000001_neon_households.sql`. Without a comment in each new migration, reviewers flag the omission as a security gap.
+**Why:** Static tests keep CI fast and credential-free. The silent `return ""` fixture hides the root cause (missing file) behind 10+ false assertion failures. The RLS omission is a project-wide decision that looks like negligence on every new migration without documentation.
+**Next time:** (1) Model all migration tests on `tests/test_password_reset_tokens_migration.py` — static SQL parsing, `re.search` patterns, no live DB. (2) In the SQL file fixture, replace `return ""` on `FileNotFoundError` with `pytest.fail(f"Migration file not found: {path}")`. (3) Every new migration must include: `-- RLS intentionally omitted: Neon compatibility (see 20260608000001_neon_households.sql)`.
+**Tags:** testing, database, migrations, rls
+
+---
+
+## 2026-06-09 — 24 pre-existing test failures are known debt from the Invoice Me rename
+
+**What happened:** Running `pytest` shows 24 failures. These are stale references from the old codebase name (Invoice Me): outdated model names, old env vars, and old API strings that were not updated when the project was renamed to Future Me. They are not regressions from recent work.
+**Why:** The project was renamed mid-development and the test suite was not fully migrated.
+**Next time:** Do not investigate these 24 failures as regressions. They are tracked debt. The fix is to update each failing test's model references and API strings to match the current codebase — not to revert recent changes.
+**Tags:** testing, technical-debt, backend
+
+---
