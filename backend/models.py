@@ -1,6 +1,8 @@
 """
 Pydantic models for request/response validation
 """
+import re
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional, Literal
 from datetime import datetime
@@ -101,8 +103,15 @@ class UserSettingsResponse(BaseModel):
 
 class CategoryCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    icon: Optional[str] = None
-    color: Optional[str] = None
+    icon: Optional[str] = Field(None, max_length=100)
+    color: Optional[str] = Field(None, max_length=7)
+
+    @field_validator("color")
+    @classmethod
+    def color_must_be_hex(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not re.fullmatch(r"#[0-9A-Fa-f]{6}", v):
+            raise ValueError("color must be a valid hex color code (e.g. #FF5733)")
+        return v
 
 
 class CategoryResponse(BaseModel):

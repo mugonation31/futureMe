@@ -70,5 +70,14 @@ export default defineConfig({
       testMatch: ["**/password-reset-api.spec.ts"],
       use: { baseURL: "http://localhost:8002" },
     },
+    {
+      // SEC-3: Category hex colour validation API smoke tests (no browser).
+      // Tests POST /api/categories with valid/invalid color values.
+      // Run with: npx playwright test --project=categories-color-api
+      name: "categories-color-api",
+      testDir: "./e2e/specs/smoke",
+      testMatch: ["**/categories-color-api.spec.ts"],
+      use: { baseURL: "http://localhost:8002" },
+    },
   ],
 });

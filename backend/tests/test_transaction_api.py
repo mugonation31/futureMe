@@ -192,3 +192,53 @@ async def test_delete_transaction_returns_204():
 
     # Assert
     assert response.status_code == 204
+
+
+# ============================================================
+# SEC-3: POST /api/categories — color hex validation
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_post_category_returns_422_when_color_is_not_hex():
+    """should return 422 when POST /api/categories with an invalid color (e.g. 'red')"""
+    # Arrange
+    context = make_context(user_id="user-abc", household_id="household-uuid-123")
+    app = get_app_with_context(context)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Act
+        response = await client.post(
+            "/api/categories",
+            json={"name": "Food", "color": "red"},
+        )
+
+    # Assert
+    assert response.status_code == 422
+    body = response.json()
+    error_text = str(body)
+    assert "hex" in error_text.lower() or "color" in error_text.lower()
+
+
+@pytest.mark.asyncio
+async def test_post_category_accepts_valid_hex_color():
+    """should return 201 when POST /api/categories with a valid hex color"""
+    # Arrange
+    context = make_context(user_id="user-abc", household_id="household-uuid-123")
+    app = get_app_with_context(context)
+
+    created = {**SAMPLE_CATEGORY, "name": "Food", "color": "#FF5733"}
+
+    with patch("database.create_category", new_callable=AsyncMock, return_value=created):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # Act
+            response = await client.post(
+                "/api/categories",
+                json={"name": "Food", "color": "#FF5733"},
+            )
+
+    # Assert
+    assert response.status_code == 201
+    data = response.json()
+    assert data["color"] == "#FF5733"

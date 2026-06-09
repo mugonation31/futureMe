@@ -248,6 +248,15 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 
 ---
 
+## 2026-06-09 — SEC-3: input validation on CategoryCreate (color regex, max_length, passlib/bcrypt incompatibility)
+
+**What happened:** `passlib 1.7.4` paired with `bcrypt 5.0.0` raises "password cannot be longer than 72 bytes" on every hash/verify call. The warning is printed to stderr but does not raise an exception — however in some pytest configurations it surfaces as an error that breaks all auth-dependent tests silently. The fix was to bypass passlib entirely and call `bcrypt.hashpw` / `bcrypt.checkpw` directly.
+**Why:** passlib 1.7.4 hard-codes bcrypt internal API calls that were removed in bcrypt 4.x. The mismatch is not caught at import time — only at the moment a password is hashed or verified. This silently broke every test that required a logged-in user.
+**Next time:** If adding `bcrypt` to requirements, pin it at `bcrypt>=4.0,<5` when using passlib, or drop passlib entirely and call `bcrypt.hashpw(pwd.encode(), bcrypt.gensalt())` / `bcrypt.checkpw(pwd.encode(), stored_hash)` directly. The direct approach has zero extra dependencies and no version-coupling risk.
+**Tags:** auth, backend, dependencies, testing
+
+---
+
 ## 2026-06-09 — SEC-1: `/api/auth/refresh` must remain unauthenticated — this is intentional
 
 **What happened:** The `/api/auth/refresh` endpoint was correctly implemented without `Depends(get_current_user)`. A review note confirmed this is intentional and must not change: the refresh token is the credential for this endpoint. Adding `get_current_user` would make the endpoint unreachable by design — it exists precisely because the access token is expired.

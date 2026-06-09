@@ -423,7 +423,7 @@ Items explicitly deferred during the Tasks 21–23 dev cycle (2026-06-08). Must 
     - Signup with a password lacking a special character returns HTTP 422
     - Frontend signup form shows inline errors before submission
 
-- [ ] **SEC-3 — Enforce `#RRGGBB` hex format on `CategoryCreate.color`** (Size: S)
+- [x] **SEC-3 — Enforce `#RRGGBB` hex format on `CategoryCreate.color`** (Size: S)
   - **Description**: Add a Pydantic `field_validator` on `CategoryCreate.color` to reject values that do not match `^#[0-9A-Fa-f]{6}$`. Also validate `icon` against an allowlist of known icon names if one is defined, or at minimum enforce a max-length to prevent oversized payloads. Return 422 with a clear message on violation.
   - **Files**: `backend/models.py`
   - **Acceptance criteria**:

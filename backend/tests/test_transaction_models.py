@@ -75,3 +75,19 @@ def test_dashboard_stats_has_category_breakdown():
     """should default category_breakdown to an empty list"""
     stats = DashboardStats()
     assert stats.category_breakdown == []
+
+
+# ============================================================
+# CategoryCreate color validation (SEC-3)
+# ============================================================
+
+def test_category_create_rejects_invalid_color_string():
+    """should raise ValidationError when CategoryCreate color is not a valid hex color"""
+    with pytest.raises(ValidationError):
+        CategoryCreate(name="Food", color="red")
+
+
+def test_category_create_accepts_valid_hex_color():
+    """should accept CategoryCreate when color is a valid 6-digit hex color"""
+    cat = CategoryCreate(name="Food", color="#FF5733")
+    assert cat.color == "#FF5733"
