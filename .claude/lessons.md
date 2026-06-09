@@ -265,3 +265,40 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 **Tags:** auth, fastapi, backend, security
 
 ---
+
+## 2026-06-09 — SEC-4: CORS tightening (Playwright Origin stripping, env normalisation, wildcard scan, HEAD discrepancy, stale app fixture)
+
+**What happened:** Playwright's `APIRequestContext` silently strips the `Origin` header from all requests. Every CORS assertion written using `page.request` or `request.fetch` reported that CORS headers were absent — which looked like a server misconfiguration but was actually Playwright removing the header before the request left the process.
+**Why:** Playwright's request context is designed for API testing, not for network-level header inspection. Origin is a "forbidden header name" in the Fetch spec and browsers also strip it in some contexts; Playwright follows the same rule.
+**Next time:** Test CORS behaviour in Playwright E2E specs by calling Node's built-in `fetch` (available in Node 18+) directly inside the test body, not via `page.request` or `request.fetch`. Set `Origin`, `Access-Control-Request-Method`, and `Access-Control-Request-Headers` explicitly on the `fetch` call. This is the only way to assert on actual CORS response headers from within a Playwright process.
+**Tags:** testing, e2e, playwright, cors
+
+---
+
+**What happened:** The `validate_cors_for_production()` guard in `config.py` originally used `env == "production"`. `"Production"` and `"production "` (trailing space) both silently passed the check, allowing a wildcard CORS config to go undetected in a production deployment with a miscased or whitespace-padded `ENVIRONMENT` value.
+**Why:** String equality checks against environment names feel complete but are not normalised. Env vars read from shell, Docker compose files, or `.env` files frequently have case or whitespace variation that is invisible to the developer.
+**Next time:** All environment-name comparisons used as security gates must be normalised: `env.strip().lower() == "production"`. Apply this rule to every `if ENVIRONMENT == ...` check in `config.py` and `main.py`. A plain `==` for a security guard is a bug waiting for a misconfigured deployment.
+**Tags:** security, config, backend, cors
+
+---
+
+**What happened:** The wildcard CORS guard checked for the exact bare token `"*"` in the origins list but did not catch origin strings containing a wildcard as a substring — e.g. `"https://*.example.com"`. The correct check is `any("*" in o for o in origins)`, which catches both `"*"` and any origin string that embeds a wildcard.
+**Why:** It is natural to write `"*" in origins` (list membership test) rather than a substring scan. The list membership test only catches the exact token `"*"` and misses wildcard subdomain patterns that Starlette will also accept as a permissive config.
+**Next time:** Wildcard CORS guards must use a substring scan: `any("*" in origin for origin in cors_origins)`. Never use `"*" in origins` (list membership) — it misses embedded wildcards that are equally permissive.
+**Tags:** security, cors, config, backend
+
+---
+
+**What happened:** `allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]` was set in Starlette's `CORSMiddleware`. Unit tests using `ASGITransport` confirmed the list exactly. But live E2E tests revealed `HEAD` appearing in `Access-Control-Allow-Methods` response headers. Uvicorn implicitly registers `HEAD` for every `GET` route at the ASGI level, below the middleware — so `HEAD` is never in the config list but does appear in live preflight responses. Suppressing it requires a custom middleware.
+**Why:** Starlette's `CORSMiddleware` echoes the `allow_methods` config list when constructing preflight responses in test transport. In a live server, uvicorn's automatic `HEAD`-on-`GET` registration adds `HEAD` to the actual allowed methods at the routing layer, which surfaces in real preflight responses even though the middleware config never included it.
+**Next time:** Do not rely solely on `ASGITransport`-based unit tests to verify the exact set of allowed methods in CORS preflight responses. Always run at least one live E2E preflight assertion against a running server to confirm what the client actually sees. If `HEAD` must be suppressed, a custom `CORSMiddleware` subclass is required — the built-in config list is insufficient.
+**Tags:** cors, testing, fastapi, starlette
+
+---
+
+**What happened:** Four of seven CORS unit tests were written as `from main import app` at module level (a cached import), rather than calling `_make_app()` to get a fresh instance. The tests appeared green against the new restricted `allow_methods` config but would have passed equally well against the old `allow_methods=["*"]` config — they were testing a stale object and not exercising the new code path at all.
+**Why:** Module-level `from main import app` in a pytest file is evaluated once at collection time. If `main.py` changes between test runs (or if multiple test files import `app` at the top level), all those test files share the same object regardless of what the module was modified to do. Tests that rely on this cached import cannot detect configuration regressions.
+**Next time:** CORS tests (and any test that needs to assert on app-level configuration) must obtain the app via a factory call (`_make_app()` or equivalent) inside the test body or fixture, not via a module-level import. A module-level `from main import app` in a test file is always testing a snapshot of the app at collection time, not a freshly configured instance.
+**Tags:** testing, cors, fastapi, test-isolation
+
+---

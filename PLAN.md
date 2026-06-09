@@ -431,7 +431,7 @@ Items explicitly deferred during the Tasks 21–23 dev cycle (2026-06-08). Must 
     - `POST /api/categories` with `color: "#FF5733"` is accepted
     - Existing category creation tests continue to pass
 
-- [ ] **SEC-4 — Tighten CORS configuration** (Size: S)
+- [x] **SEC-4 — Tighten CORS configuration** (Size: S)
   - **Description**: Replace the current wildcard or broad CORS setup with an explicit allowlist. Restrict `allow_methods` to `["GET", "POST", "PATCH", "DELETE", "OPTIONS"]`. Restrict `allow_headers` to `["Authorization", "Content-Type"]`. `allow_origins` must be set from `CORS_ORIGINS` env var with no wildcard in production (`ENVIRONMENT=production`). Add a startup assertion that rejects a production boot with `CORS_ORIGINS=*`.
   - **Files**: `backend/main.py`, `backend/config.py`
   - **Acceptance criteria**:

@@ -79,5 +79,14 @@ export default defineConfig({
       testMatch: ["**/categories-color-api.spec.ts"],
       use: { baseURL: "http://localhost:8002" },
     },
+    {
+      // SEC-4: CORS tightening API smoke tests (no browser).
+      // Verifies preflight/simple-request CORS header behaviour using Node fetch.
+      // Run with: npx playwright test --project=cors-api
+      name: "cors-api",
+      testDir: "./e2e/specs/smoke",
+      testMatch: ["**/cors-api.spec.ts"],
+      use: { baseURL: "http://localhost:8002" },
+    },
   ],
 });

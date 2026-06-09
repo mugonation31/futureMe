@@ -28,5 +28,15 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> List[str]:
         return [origin.strip() for origin in self.cors_origins.split(",")]
 
+    def validate_cors_for_production(self) -> None:
+        """Raise ValueError if wildcard CORS is configured in production."""
+        if self.environment.strip().lower() != "production":
+            return
+        if any("*" in origin for origin in self.cors_origins_list):
+            raise ValueError(
+                "CORS wildcard (*) is not allowed in production. "
+                "Set CORS_ORIGINS to specific allowed origins."
+            )
+
 
 settings = Settings()
