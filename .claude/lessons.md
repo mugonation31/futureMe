@@ -320,3 +320,26 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 **Tags:** testing, technical-debt, backend
 
 ---
+
+## 2026-06-09 — Task 31: category_budgets (GROUP BY nullable LEFT JOIN, asyncpg transaction mock, numeric bounds)
+
+**What happened:** Adding a LEFT-JOINed `cb.monthly_limit` column to a `GROUP BY` clause caused a correctness bug — rows with different NULL vs non-NULL values for the same category were grouped separately, producing duplicate result rows. The fix was to keep `GROUP BY bc.name` only and use `MAX(cb.monthly_limit) AS budget` as an aggregate.
+**Why:** A LEFT JOIN produces NULLs for unmatched rows. Including a nullable column in GROUP BY prevents NULL rows from collapsing with their non-NULL siblings, because `NULL != NULL` in GROUP BY semantics.
+**Next time:** Never include a nullable LEFT-JOINed column in GROUP BY. Instead, apply an aggregate function (`MAX`, `MIN`, `COALESCE(MAX(...), 0)`) to that column and keep GROUP BY scoped to the driving table's columns only.
+**Tags:** database, sql, backend, correctness
+
+---
+
+**What happened:** `upsert_category_budget` issued two sequential `fetchrow` calls (SELECT then INSERT/UPDATE) without a transaction. The test mock used `AsyncMock` for `conn.transaction()`, but asyncpg's real `transaction()` returns a *synchronous* context manager wrapping an async one. `AsyncMock` makes `__aenter__` an async method, so `async with conn.transaction()` worked — but `MagicMock` with a manually constructed async context manager is the correct approach when you need to assert the transaction was entered.
+**Why:** asyncpg's `connection.transaction()` is a synchronous call that returns an `asyncpg.transaction.Transaction` object (used as an async context manager). `AsyncMock()` makes the call itself awaitable, which is wrong — it's not a coroutine. Using `MagicMock(return_value=async_ctx)` matches the real behaviour.
+**Next time:** When mocking `conn.transaction()` in asyncpg tests, use the `attach_transaction` helper pattern: `tx_ctx = MagicMock(); tx_ctx.__aenter__ = AsyncMock(return_value=None); tx_ctx.__aexit__ = AsyncMock(return_value=False); conn.transaction = MagicMock(return_value=tx_ctx)`. Never use `conn.transaction = AsyncMock()` — asyncpg's `transaction()` is not a coroutine.
+**Tags:** testing, database, asyncpg, mocking
+
+---
+
+**What happened:** `monthly_limit: float = Field(..., gt=0)` accepted `float('inf')` and very large values because no upper bound was declared. `category_id: str` accepted empty strings and arbitrarily long inputs because no length constraints were declared.
+**Why:** `gt=0` only establishes a lower bound. Pydantic does not cap numeric fields unless `le=N` (or `lt=N`) is also declared. Similarly, `str` fields without `min_length`/`max_length` accept any length.
+**Next time:** Every numeric field that represents a real-world quantity must declare both a lower bound and an upper bound: `Field(..., gt=0, le=1_000_000_000)`. Every string field used as an identifier (UUID, slug, code) must declare `min_length` and `max_length` matching the expected format. For UUID strings: `min_length=36, max_length=36`.
+**Tags:** security, validation, pydantic, backend
+
+---

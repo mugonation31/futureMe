@@ -460,7 +460,7 @@ Adds per-category monthly spending limits so the dashboard category breakdown ca
     - `updated_at` is auto-updated via trigger on UPDATE
     - Index on `category_budgets(household_id)` exists
 
-- [ ] **Task 31 — Backend: category budget Pydantic models and DB operations** (Size: M)
+- [x] **Task 31 — Backend: category budget Pydantic models and DB operations** (Size: M)
   - **Description**: Add to `backend/models.py`: `CategoryBudgetUpsert` (category_id: str, monthly_limit: float gt=0); `CategoryBudgetResponse` (id, household_id, category_id, category_name: Optional[str], monthly_limit, created_at, updated_at). Extend `CategorySpend` with `budget: Optional[float] = None`. Add to `backend/database.py`: `upsert_category_budget(household_id, category_id, monthly_limit) -> dict` (INSERT ... ON CONFLICT (household_id, category_id) DO UPDATE SET monthly_limit = EXCLUDED.monthly_limit, updated_at = NOW(), returns joined category name); `get_category_budgets(household_id) -> list[dict]` (joins budget_categories on category_id to include category_name, ordered by category_name ASC); `delete_category_budget(household_id, category_id) -> bool`. Update `get_dashboard_stats` to LEFT JOIN `category_budgets` in the category breakdown query so each `CategorySpend` row includes the matching `monthly_limit` (None if no budget set).
   - **Depends on**: Task 30, Task 21
   - **Files**: `backend/models.py`, `backend/database.py`

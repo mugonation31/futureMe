@@ -206,9 +206,12 @@ async def get_dashboard_stats(user_id: str, household_id: str = None) -> Dict[st
 
         category_rows = await conn.fetch(
             """SELECT COALESCE(bc.name, 'Uncategorised') AS category_name,
-                      SUM(t.amount) AS spent
+                      SUM(t.amount) AS spent,
+                      MAX(cb.monthly_limit) AS budget
                FROM transactions t
                LEFT JOIN budget_categories bc ON bc.id = t.category_id
+               LEFT JOIN category_budgets cb
+                      ON cb.category_id = bc.id AND cb.household_id = t.household_id
                WHERE t.household_id = $1
                  AND t.type = 'expense'
                  AND date_trunc('month', t.date) = date_trunc('month', CURRENT_DATE)
@@ -230,7 +233,11 @@ async def get_dashboard_stats(user_id: str, household_id: str = None) -> Dict[st
         "remaining_budget": remaining_budget,
         "savings_rate": savings_rate,
         "category_breakdown": [
-            {"category_name": r["category_name"], "spent": float(r["spent"])}
+            {
+                "category_name": r["category_name"],
+                "spent": float(r["spent"]),
+                "budget": float(r["budget"]) if r["budget"] is not None else None,
+            }
             for r in category_rows
         ],
     }
@@ -469,5 +476,66 @@ async def delete_transaction(household_id: str, transaction_id: str) -> bool:
             "DELETE FROM transactions WHERE household_id = $1 AND id = $2",
             household_id,
             transaction_id,
+        )
+    return status == "DELETE 1"
+
+
+# ============================================================
+# Category Budget CRUD
+# ============================================================
+
+_CATEGORY_BUDGET_SELECT = """
+    SELECT cb.id, cb.household_id, cb.category_id,
+           bc.name AS category_name,
+           cb.monthly_limit, cb.created_at, cb.updated_at
+    FROM category_budgets cb
+    JOIN budget_categories bc ON bc.id = cb.category_id
+"""
+
+
+async def upsert_category_budget(household_id: str, data) -> Dict[str, Any]:
+    """Insert or update a category budget, returning the row with category_name joined."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """INSERT INTO category_budgets (household_id, category_id, monthly_limit)
+                   VALUES ($1, $2, $3)
+                   ON CONFLICT (household_id, category_id) DO UPDATE
+                       SET monthly_limit = EXCLUDED.monthly_limit,
+                           updated_at = NOW()
+                   RETURNING id""",
+                household_id,
+                data.category_id,
+                data.monthly_limit,
+            )
+            full_row = await conn.fetchrow(
+                _CATEGORY_BUDGET_SELECT + " WHERE cb.id = $1",
+                row["id"],
+            )
+    if full_row is None:
+        raise RuntimeError("Budget row disappeared after upsert")
+    return _serialize_row(full_row)
+
+
+async def get_category_budgets(household_id: str) -> list:
+    """Return all category budgets for a household with category names joined."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            _CATEGORY_BUDGET_SELECT + " WHERE cb.household_id = $1 ORDER BY bc.name ASC",
+            household_id,
+        )
+    return [_serialize_row(r) for r in rows]
+
+
+async def delete_category_budget(household_id: str, category_id: str) -> bool:
+    """Delete a category budget. Returns True if a row was deleted."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        status = await conn.execute(
+            "DELETE FROM category_budgets WHERE household_id = $1 AND category_id = $2",
+            household_id,
+            category_id,
         )
     return status == "DELETE 1"

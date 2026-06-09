@@ -165,6 +165,28 @@ class TransactionResponse(BaseModel):
 class CategorySpend(BaseModel):
     category_name: str
     spent: float
+    budget: Optional[float] = None
+
+
+# ============================================================
+# Category Budget models
+# ============================================================
+
+class CategoryBudgetUpsert(BaseModel):
+    category_id: str = Field(..., min_length=36, max_length=36)
+    monthly_limit: float = Field(..., gt=0, le=1_000_000_000)
+
+
+class CategoryBudgetResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    household_id: str
+    category_id: str
+    category_name: str
+    monthly_limit: float
+    created_at: datetime
+    updated_at: datetime
 
 
 # ============================================================
