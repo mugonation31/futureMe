@@ -142,28 +142,32 @@ test.describe('Login page — /login', () => {
 // ─── 3. Signup page ───────────────────────────────────────────────────────────
 
 test.describe('Signup page — /signup', () => {
-  test('should render all four input fields', async ({ page }) => {
+  test('should render First Name and Last Name inputs (not a single Full Name input)', async ({ page }) => {
     const signupPage = new SignupPage(page);
     await signupPage.goto();
 
-    // The signup form has four inputs: Full Name, Email, Password, Confirm Password.
-    await expect(signupPage.nameInput).toBeVisible();
+    // The signup form now has First Name + Last Name instead of a single Full Name field.
+    await expect(signupPage.firstNameInput).toBeVisible();
+    await expect(signupPage.lastNameInput).toBeVisible();
     await expect(signupPage.emailInput).toBeVisible();
     await expect(signupPage.passwordInput).toBeVisible();
     await expect(signupPage.confirmPasswordInput).toBeVisible();
+    // Confirm that the old "Full Name" field is gone.
+    await expect(page.getByLabel('Full Name')).toHaveCount(0);
   });
 
   test('should show an error when passwords do not match', async ({ page }) => {
     const signupPage = new SignupPage(page);
     await signupPage.goto();
 
-    // Fill valid name + email + mismatched passwords.
+    // Fill valid first/last name + email + mismatched passwords.
     // SignupComponent.validateForm() checks `password !== confirmPassword` and
     // sets errorMessage = 'Passwords do not match'.
-    await signupPage.nameInput.fill('Test User');
+    await signupPage.firstNameInput.fill('Test');
+    await signupPage.lastNameInput.fill('User');
     await signupPage.emailInput.fill('test@example.com');
-    await signupPage.passwordInput.fill('password123');
-    await signupPage.confirmPasswordInput.fill('different456');
+    await signupPage.passwordInput.fill('Password1!');
+    await signupPage.confirmPasswordInput.fill('Different1!');
     await signupPage.submitButton.click();
 
     const errorMessage = page.locator('.error-message');
@@ -177,10 +181,11 @@ test.describe('Signup page — /signup', () => {
 
     // SignupComponent.validateForm() rejects passwords shorter than 6 characters
     // with errorMessage = 'Password must be at least 6 characters'.
-    await signupPage.nameInput.fill('Test User');
+    await signupPage.firstNameInput.fill('Test');
+    await signupPage.lastNameInput.fill('User');
     await signupPage.emailInput.fill('test@example.com');
-    await signupPage.passwordInput.fill('abc');
-    await signupPage.confirmPasswordInput.fill('abc');
+    await signupPage.passwordInput.fill('ab1!');
+    await signupPage.confirmPasswordInput.fill('ab1!');
     await signupPage.submitButton.click();
 
     const errorMessage = page.locator('.error-message');

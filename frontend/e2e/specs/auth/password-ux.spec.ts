@@ -260,7 +260,9 @@ test.describe('Signup — client-side complexity validation on submit', () => {
     await ux.gotoSignup();
 
     // "password" — meets length requirement but has no digit and no special char.
-    await page.getByLabel('Full Name').fill('Test User');
+    // The form now uses First Name + Last Name instead of the old Full Name field.
+    await page.getByLabel('First Name').fill('Test');
+    await page.getByLabel('Last Name').fill('User');
     await page.getByLabel('Email').fill('test@example.com');
     await ux.signupPasswordInput.fill('password');
     await ux.signupConfirmPasswordInput.fill('password');
@@ -277,7 +279,9 @@ test.describe('Signup — client-side complexity validation on submit', () => {
     await ux.gotoSignup();
 
     // "Password1" — meets length + digit requirements but has no special char.
-    await page.getByLabel('Full Name').fill('Test User');
+    // The form now uses First Name + Last Name instead of the old Full Name field.
+    await page.getByLabel('First Name').fill('Test');
+    await page.getByLabel('Last Name').fill('User');
     await page.getByLabel('Email').fill('test@example.com');
     await ux.signupPasswordInput.fill('Password1');
     await ux.signupConfirmPasswordInput.fill('Password1');

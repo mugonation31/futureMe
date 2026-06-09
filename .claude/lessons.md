@@ -321,6 +321,43 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 
 ---
 
+## 2026-06-09 — User name field split + BiDi validation (Pydantic whitespace, constraint audit, null bytes, page objects)
+
+**What happened:** `Field(..., min_length=1)` accepted `"   "` (three spaces) as a valid name. The field validator had to call `v.strip()` explicitly before the length check — Pydantic's built-in `min_length` does not strip whitespace.
+**Why:** Pydantic validates the raw value as supplied. `min_length=1` only checks that at least one character is present; it does not normalise the value first. A string of spaces has length > 0 and passes silently.
+**Next time:** Any string field that should reject blank or whitespace-only input must use a `@field_validator` that calls `v.strip()` and then checks `len(v) > 0` (or re-applies `min_length`). `Field(min_length=N)` alone is insufficient for user-facing text fields.
+**Tags:** validation, pydantic, backend, forms
+
+---
+
+**What happened:** The original `name` field had `min_length=2`. When split into `first_name` + `last_name`, each new field was given `min_length=1` and the `min_length=2` constraint was not carried forward. The gap was invisible because the tests were written for the new structure.
+**Why:** When refactoring a field, attention focuses on the new structure. The original field's constraints are documented only in the old code, which is being replaced — making it easy to forget them entirely.
+**Next time:** Before splitting or renaming a Pydantic field, list every constraint on the original field (`min_length`, `max_length`, `pattern`, `gt`, `le`, validators) and verify each one is re-expressed on the new fields. Treat this as a required pre-flight step, not a post-refactor check.
+**Tags:** validation, pydantic, backend, refactoring
+
+---
+
+**What happened:** Name fields accepted Unicode BiDi override characters (U+202A–U+202E, U+2066–U+2069), which can produce misleading display names. These characters are invisible in most UIs but cause text to render in a different direction or wrap around other content.
+**Why:** Standard length and pattern validators do not check Unicode control character ranges. BiDi overrides are rare enough that most developers don't think to block them.
+**Next time:** Name and display-name validators in this project must include: `BIDI_OVERRIDE = set(range(0x202A, 0x202F)) | set(range(0x2066, 0x206A))` and reject any value containing a character in that set. Use `any(ord(c) in BIDI_OVERRIDE for c in v)` — never embed the Unicode codepoints literally as characters in source code.
+**Tags:** security, validation, backend, unicode
+
+---
+
+**What happened:** When embedding a character check in a Python source file, a literal `\x00` (null byte) was written directly into the source, causing Python to refuse to parse the file entirely with "source code string cannot contain null bytes."
+**Why:** Writing a bytes literal to a file without using escape sequences embeds the raw byte value into the source file itself. A `\x00` in a Python source file terminates the "string" at the OS level before the parser sees it.
+**Next time:** Never embed null bytes or other non-printable control characters literally in Python source code. Use `ord(c) == 0` for null-byte checks, or `c == '\x00'` (the escape sequence, not the literal). When in doubt, use codepoint comparisons (`ord(c)`) rather than character literals for control characters.
+**Tags:** python, backend, encoding, debugging
+
+---
+
+**What happened:** After renaming the signup form from a single `Full Name` field to `First Name` + `Last Name`, the E2E page object (`signup.page.ts`) still had `nameInput` pointing to `getByLabel('Full Name')`. Both `auth-pages.spec.ts` and `password-ux.spec.ts` broke immediately — not because their logic was wrong, but because they used the stale page object helper.
+**Why:** Page object helpers are a layer of indirection that isolates selector churn. But the indirection only helps if the page object is updated first. When a field is renamed rather than added, it is easy to update the component and miss the page object.
+**Next time:** When renaming or splitting any form field, update the page object before running the specs. The update order is: (1) component template, (2) page object helpers, (3) specs. If you see a spec failure on a page-object method name that hasn't changed, check whether the underlying selector has changed instead.
+**Tags:** e2e, playwright, page-objects, forms
+
+---
+
 ## 2026-06-09 — Task 31: category_budgets (GROUP BY nullable LEFT JOIN, asyncpg transaction mock, numeric bounds)
 
 **What happened:** Adding a LEFT-JOINed `cb.monthly_limit` column to a `GROUP BY` clause caused a correctness bug — rows with different NULL vs non-NULL values for the same category were grouped separately, producing duplicate result rows. The fix was to keep `GROUP BY bc.name` only and use `MAX(cb.monthly_limit) AS budget` as an aggregate.

@@ -616,7 +616,7 @@ Replaces the single `name` field on registration with separate `first_name` and 
 
 ---
 
-- [ ] **Task 41 — DB migration: add first_name and last_name columns to users** (Size: S)
+- [x] **Task 41 — DB migration: add first_name and last_name columns to users** (Size: S)
   - **Description**: Create migration file `20260609000009_users_split_name.sql`. Add `first_name text` and `last_name text` columns (both nullable) to the `users` table. Do not alter or drop `display_name`.
   - **Depends on**: None
   - **Files**: `migrations/migrations/20260609000009_users_split_name.sql` (new)
@@ -625,7 +625,7 @@ Replaces the single `name` field on registration with separate `first_name` and 
     - `display_name` column is untouched
     - Existing rows unaffected
 
-- [ ] **Task 42 — Backend: split RegisterRequest and update create_user** (Size: S)
+- [x] **Task 42 — Backend: split RegisterRequest and update create_user** (Size: S)
   - **Description**: Replace `name: str` on `RegisterRequest` with `first_name` and `last_name` (each `Field(..., min_length=1, max_length=100)`). Update `create_user()` signature to accept `first_name` and `last_name`, derive `display_name = f"{first_name.strip()} {last_name.strip()}"` inside the function, insert all three. Update `main.py` to call `db.create_user(body.email, body.password, body.first_name, body.last_name)`.
   - **Depends on**: Task 41
   - **Files**: `backend/models.py`, `backend/database.py`, `backend/main.py`
@@ -635,7 +635,7 @@ Replaces the single `name` field on registration with separate `first_name` and 
     - Stored `display_name` equals trimmed `first_name + ' ' + last_name`
     - JWT `display_name` claim populated correctly
 
-- [ ] **Task 43 — Backend: update tests for new RegisterRequest shape** (Size: S)
+- [x] **Task 43 — Backend: update tests for new RegisterRequest shape** (Size: S)
   - **Description**: Replace all `name` field references in registration test payloads with `first_name`/`last_name`. Update `create_user` mock return dicts. All tests must pass.
   - **Depends on**: Task 42
   - **Files**: `backend/tests/test_token_refresh.py`, `backend/tests/test_password_complexity.py`, any other test touching registration
@@ -643,7 +643,7 @@ Replaces the single `name` field on registration with separate `first_name` and 
     - `pytest` passes with no failures
     - No test references old `name` field on registration payload
 
-- [ ] **Task 44 — Frontend: split Full Name into First Name + Last Name on signup** (Size: S)
+- [x] **Task 44 — Frontend: split Full Name into First Name + Last Name on signup** (Size: S)
   - **Description**: Replace single `name` field with `firstName`/`lastName` in the signup component. Add two form inputs (First Name, Last Name). Update `authService.register()` signature to `(email, password, firstName, lastName)` and POST body to `{ email, password, first_name: firstName, last_name: lastName }`.
   - **Depends on**: Task 42
   - **Files**: `frontend/src/app/auth/signup/signup.component.ts`, `frontend/src/app/auth/signup/signup.component.html`, `frontend/src/app/core/services/auth.service.ts`

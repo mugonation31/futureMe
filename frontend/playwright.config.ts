@@ -144,5 +144,36 @@ export default defineConfig({
       },
       testMatch: ['**/auth/password-ux.spec.ts'],
     },
+
+    /**
+     * signup project
+     * ---------------
+     * Covers the sign-up form changes that split the old "Full Name" input into
+     * separate "First Name" and "Last Name" inputs.
+     *
+     * Test groups:
+     *   1. Form structure — First Name + Last Name present, Full Name absent
+     *   2. First Name validation — empty / whitespace shows inline error
+     *   3. Last Name validation  — empty / whitespace shows inline error
+     *   4. Successful registration — mocked POST /api/auth/register, redirect to
+     *      /onboarding, request body uses first_name / last_name
+     *
+     * Tests 1–3 are pure client-side validation checks (no API calls).
+     * Test 4 mocks POST /api/auth/register via page.route() — no live backend
+     * required.
+     *
+     * The Angular dev server must be running on AUTH_PAGES_BASE_URL (default: 4200).
+     *
+     * Run only this project with:
+     *   npx playwright test --project=signup
+     */
+    {
+      name: 'signup',
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: process.env['AUTH_PAGES_BASE_URL'] || 'http://localhost:4200',
+      },
+      testMatch: ['**/auth/signup.spec.ts'],
+    },
   ],
 });
