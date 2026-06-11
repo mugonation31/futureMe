@@ -1,18 +1,18 @@
 import { TestBed } from '@angular/core/testing';
 import {
-  HttpClientTestingModule,
   HttpTestingController,
+  provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import {
-  HTTP_INTERCEPTORS,
   HttpClient,
   HttpErrorResponse,
+  provideHttpClient,
+  withInterceptors,
 } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { authInterceptor } from './auth.interceptor';
 import { AuthService } from '../services/auth.service';
-import { provideHttpClient, withInterceptors } from '@angular/common/http';
 
 describe('authInterceptor', () => {
   let http: HttpClient;
@@ -20,6 +20,7 @@ describe('authInterceptor', () => {
   let mockAuthService: {
     getToken: jasmine.Spy;
     refreshAccessToken: jasmine.Spy;
+    storeAccessToken: jasmine.Spy;
     logout: jasmine.Spy;
   };
   let mockRouter: { navigate: jasmine.Spy };
@@ -30,6 +31,9 @@ describe('authInterceptor', () => {
       refreshAccessToken: jasmine.createSpy('refreshAccessToken').and.returnValue(
         of({ access_token: 'new.access.token' })
       ),
+      storeAccessToken: jasmine.createSpy('storeAccessToken').and.callFake((token: string) => {
+        localStorage.setItem('fm_access_token', token);
+      }),
       logout: jasmine.createSpy('logout'),
     };
 
@@ -43,6 +47,7 @@ describe('authInterceptor', () => {
     TestBed.configureTestingModule({
       providers: [
         provideHttpClient(withInterceptors([authInterceptor])),
+        provideHttpClientTesting(),
         { provide: AuthService, useValue: mockAuthService },
         { provide: Router, useValue: mockRouter },
       ],

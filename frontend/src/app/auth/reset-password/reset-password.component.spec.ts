@@ -100,8 +100,8 @@ describe('ResetPasswordComponent', () => {
   it('should call POST /api/auth/reset-password with token and new_password on valid submit', fakeAsync(async () => {
     const { fixture, component, httpMock } = await createFixture('valid-token-abc');
 
-    component.newPassword = 'newpassword123';
-    component.confirmPassword = 'newpassword123';
+    component.newPassword = 'newpassword123!';
+    component.confirmPassword = 'newpassword123!';
     fixture.detectChanges();
 
     const form = fixture.nativeElement.querySelector('form');
@@ -110,7 +110,7 @@ describe('ResetPasswordComponent', () => {
 
     const req = httpMock.expectOne(`${environment.apiUrl}/auth/reset-password`);
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ token: 'valid-token-abc', new_password: 'newpassword123' });
+    expect(req.request.body).toEqual({ token: 'valid-token-abc', new_password: 'newpassword123!' });
 
     req.flush({});
     tick();
@@ -121,8 +121,8 @@ describe('ResetPasswordComponent', () => {
   it('should navigate to /login?reset=success on 200 response', fakeAsync(async () => {
     const { fixture, component, httpMock, router } = await createFixture('valid-token-abc');
 
-    component.newPassword = 'newpassword123';
-    component.confirmPassword = 'newpassword123';
+    component.newPassword = 'newpassword123!';
+    component.confirmPassword = 'newpassword123!';
     fixture.detectChanges();
 
     const form = fixture.nativeElement.querySelector('form');
@@ -142,8 +142,8 @@ describe('ResetPasswordComponent', () => {
   it('should show error message on 400 response', fakeAsync(async () => {
     const { fixture, component, httpMock } = await createFixture('expired-token');
 
-    component.newPassword = 'newpassword123';
-    component.confirmPassword = 'newpassword123';
+    component.newPassword = 'newpassword123!';
+    component.confirmPassword = 'newpassword123!';
     fixture.detectChanges();
 
     const form = fixture.nativeElement.querySelector('form');

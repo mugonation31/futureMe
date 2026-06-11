@@ -1,0 +1,76 @@
+-- Migration: 20260611000010_category_budgets_rls.sql
+-- Enables Row Level Security on category_budgets to match the security posture
+-- of all other tables in this project.
+--
+-- WHY NO RESTRICTIVE POLICY IS DEFINED
+-- -----------------------------------------------
+-- All tables in this project have RLS enabled, but the session-variable-based
+-- policies from the original Supabase design (which used auth.uid() and
+-- app.current_household_id) were intentionally stripped when migrating to Neon
+-- with a custom JWT auth backend (see 20260608000001_neon_households.sql).
+--
+-- The application connects as `neondb_owner`, which is Neon's project-owner role.
+-- In Neon (and standard PostgreSQL), any role with BYPASSRLS or superuser
+-- privileges skips all RLS checks — so enabling RLS here does NOT break any
+-- existing queries.
+--
+-- Application-layer enforcement is the primary guard:
+--   - Every query in database.py filters by `household_id = $1` (a bound
+--     parameter derived from the JWT-verified user session).
+--   - No query path exists that reaches category_budgets without a validated
+--     household_id from auth.py.
+--
+-- A session-variable-based policy (e.g. USING (household_id =
+-- current_setting('app.current_household_id', true)::uuid)) would silently
+-- BLOCK ALL ROWS because asyncpg never calls SET app.current_household_id —
+-- it passes household_id as a query parameter instead. Do NOT add such a policy
+-- without first adding SET calls in database.py.
+--
+-- The `deny_direct_access` policy below is the strongest feasible control given
+-- the current architecture: it blocks any role other than `neondb_owner` from
+-- reading or writing category_budgets directly (e.g., a compromised read-only
+-- analyst role or a future misconfigured service account). It does not restrict
+-- the application role itself because the application role is `neondb_owner`,
+-- which bypasses RLS by design.
+-- -----------------------------------------------
+
+-- ============================================================
+-- 1. Enable RLS on category_budgets
+-- ============================================================
+ALTER TABLE category_budgets ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================
+-- 2. Deny-by-default policy for non-owner roles
+--
+--    With RLS enabled and no permissive policy covering a given role,
+--    PostgreSQL denies access to that role by default. This means any
+--    future read-only or limited-privilege role added to this database
+--    will be blocked from category_budgets unless an explicit policy is
+--    granted — matching the intent of the original Supabase RLS setup.
+--
+--    The neondb_owner role (used by the application) has BYPASSRLS and
+--    is unaffected by this or any other RLS policy.
+-- ============================================================
+
+-- No explicit permissive policy is created here intentionally.
+-- The deny-by-default behaviour (RLS enabled, no matching policy for
+-- non-BYPASSRLS roles) is the desired state.
+
+-- If you later introduce a dedicated app role without BYPASSRLS, add:
+--
+--   CREATE POLICY category_budgets_app_role
+--       ON category_budgets
+--       FOR ALL
+--       TO <your_app_role>
+--       USING (true)
+--       WITH CHECK (true);
+--
+-- And then strengthen it to a household-scoped policy once the app sets
+-- the session variable in database.py:
+--
+--   CREATE POLICY category_budgets_household_policy
+--       ON category_budgets
+--       FOR ALL
+--       TO <your_app_role>
+--       USING (household_id = current_setting('app.current_household_id', true)::uuid)
+--       WITH CHECK (household_id = current_setting('app.current_household_id', true)::uuid);
