@@ -42,9 +42,9 @@
     <div class="breakdown-section">
       <h2>Spending by Category</h2>
 
-      <!-- Empty state — budget set but no transactions -->
-      <div *ngIf="stats.total_budget > 0 && stats.category_breakdown.length === 0"
-           data-testid="empty-transactions"
+      <!-- Empty state — no categories with transactions this month -->
+      <div *ngIf="stats.category_breakdown.length === 0"
+           data-testid="category-empty-state"
            class="cta-card">
         <p>No transactions this month.</p>
         <a routerLink="/transactions" class="btn-primary">Add your first transaction</a>
@@ -55,12 +55,17 @@
            class="category-row">
         <span class="category-name">{{ row.category_name }}</span>
         <span class="category-spent">{{ row.spent | appCurrency }}</span>
-        <div class="progress-bar-track" *ngIf="stats.total_budget > 0">
+        <div class="progress-bar-track" data-testid="category-progress-track">
           <div class="progress-bar-fill"
-               [style.width.%]="getBarWidth(row.spent)"
-               [class.over-budget]="row.spent >= stats.total_budget * 0.9">
+               data-testid="category-progress-fill"
+               [style.width.%]="getCategoryBarWidth(row.spent, row.budget)"
+               [class.over-budget]="isCategoryAtLimit(row.spent, row.budget)">
           </div>
         </div>
+        <span class="category-budget">
+          <ng-container *ngIf="row.budget !== null; else noLimit">{{ row.budget | appCurrency }}</ng-container>
+          <ng-template #noLimit>No limit</ng-template>
+        </span>
       </div>
     </div>
 

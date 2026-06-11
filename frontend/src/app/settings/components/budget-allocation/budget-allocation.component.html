@@ -1,0 +1,26 @@
+<div class="settings-card">
+  <h2 class="section-title">Category Budgets</h2>
+
+  <div class="loading-message" *ngIf="loading">Loading categories…</div>
+
+  <div class="error-message" *ngIf="errorMessage">{{ errorMessage }}</div>
+  <div class="success-message" *ngIf="successMessage">{{ successMessage }}</div>
+
+  <div class="budget-row form-group" *ngFor="let row of rows">
+    <label class="form-label">{{ row.category.name }}</label>
+    <input
+      type="number"
+      class="form-input"
+      [(ngModel)]="row.limit"
+      placeholder="Monthly limit"
+      min="0.01"
+      step="0.01"
+    />
+  </div>
+
+  <div class="form-actions">
+    <button type="button" class="btn btn-primary" (click)="onSave()" [disabled]="saving || loading">
+      {{ saving ? 'Saving...' : 'Save Budgets' }}
+    </button>
+  </div>
+</div>

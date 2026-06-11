@@ -49,4 +49,14 @@ export class DashboardComponent implements OnInit {
     return Math.min(100, (spent / this.stats.total_budget) * 100);
   }
 
+  getCategoryBarWidth(spent: number, budget: number | null): number {
+    if (budget === null || budget === 0) return 0;
+    return Math.min(100, Math.max(0, (spent / budget) * 100));
+  }
+
+  isCategoryAtLimit(spent: number, budget: number | null): boolean {
+    if (budget === null || budget === 0) return false;
+    return (spent / budget) >= 0.9;
+  }
+
 }

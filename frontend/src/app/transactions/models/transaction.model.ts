@@ -28,3 +28,13 @@ export interface TransactionCreate {
   date?: string | null;
   category_id?: string | null;
 }
+
+export interface CategoryBudget {
+  id: string;
+  household_id: string;
+  category_id: string;
+  category_name: string;
+  monthly_limit: number;
+  created_at: string;
+  updated_at: string;
+}

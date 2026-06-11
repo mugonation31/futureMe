@@ -503,6 +503,14 @@ async def upsert_category_budget(household_id: str, data) -> Dict[str, Any]:
     pool = await get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
+            category = await conn.fetchrow(
+                """SELECT id FROM budget_categories
+                   WHERE id = $1 AND (household_id = $2 OR household_id IS NULL)""",
+                data.category_id,
+                household_id,
+            )
+            if category is None:
+                return None
             row = await conn.fetchrow(
                 """INSERT INTO category_budgets (household_id, category_id, monthly_limit)
                    VALUES ($1, $2, $3)

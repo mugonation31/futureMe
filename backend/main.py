@@ -1,7 +1,7 @@
 """
 FastAPI backend for futureMe app
 """
-from fastapi import FastAPI, Depends, HTTPException, Query, status
+from fastapi import FastAPI, Depends, HTTPException, Path, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
@@ -18,6 +18,7 @@ from models import (
     RegisterRequest, LoginRequest, AuthResponse, AuthUser,
     RefreshRequest, AccessTokenResponse,
     CategoryCreate, CategoryResponse,
+    CategoryBudgetUpsert, CategoryBudgetResponse,
     TransactionCreate, TransactionUpdate, TransactionResponse,
     ForgotPasswordRequest, ResetPasswordRequest,
 )
@@ -324,6 +325,57 @@ async def create_category(
     if context.household_id is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
     return await db.create_category(context.household_id, body.name, body.icon, body.color)
+
+
+# ============================================================
+# Category Budget endpoints
+# ============================================================
+
+@app.get("/api/category-budgets", response_model=list[CategoryBudgetResponse])
+async def get_category_budgets(context: CurrentUserContext = Depends(get_current_user)):
+    if context.household_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
+    return await db.get_category_budgets(context.household_id)
+
+
+@app.put("/api/category-budgets", response_model=CategoryBudgetResponse)
+async def upsert_category_budget(
+    body: CategoryBudgetUpsert,
+    context: CurrentUserContext = Depends(get_current_user),
+):
+    if context.household_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
+    role = await db.get_member_role(context.user_id, context.household_id)
+    if role != "owner":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the household owner can set a category budget",
+        )
+    result = await db.upsert_category_budget(context.household_id, body)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+    return result
+
+
+_UUID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+
+
+@app.delete("/api/category-budgets/{category_id}", status_code=204)
+async def delete_category_budget(
+    category_id: str = Path(pattern=_UUID_PATTERN),
+    context: CurrentUserContext = Depends(get_current_user),
+):
+    if context.household_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
+    role = await db.get_member_role(context.user_id, context.household_id)
+    if role != "owner":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the household owner can delete a category budget",
+        )
+    deleted = await db.delete_category_budget(context.household_id, category_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category budget not found")
 
 
 # ============================================================

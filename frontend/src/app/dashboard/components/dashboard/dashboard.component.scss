@@ -158,6 +158,14 @@ h1 {
   }
 }
 
+.category-budget {
+  flex: 0 0 90px;
+  font-size: 0.875rem;
+  color: var(--text-muted, #718096);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .quick-actions {
   background: var(--bg-card, #fff);
   border-radius: 12px;

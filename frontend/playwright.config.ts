@@ -175,5 +175,91 @@ export default defineConfig({
       },
       testMatch: ['**/auth/signup.spec.ts'],
     },
+
+    /**
+     * budget-allocation-settings project (Task 33)
+     * ----------------------------------------------
+     * Covers the BudgetAllocationComponent embedded in the /settings page.
+     *
+     * Test groups:
+     *   1. Panel rendering — panel is visible below the existing settings form
+     *   2. Categories load — rows show category names with pre-filled limits
+     *   3. Save fires PUT  — changing a value and saving sends PUT
+     *   4. Save fires DELETE — clearing a pre-filled value sends DELETE
+     *   5. Unchanged rows skipped — no API call when nothing changed
+     *   6. Invalid input validation — error shown before any API call
+     *   7. 403 error — owner-only error message displayed
+     *   8. Loading state — loading message shown while forkJoin is in flight
+     *
+     * All API calls are mocked via page.route() — no live backend required.
+     * The Angular dev server must be running on E2E_BASE_URL (default: 4202).
+     *
+     * Run only this project with:
+     *   npx playwright test --project=budget-allocation-settings
+     */
+    {
+      name: 'budget-allocation-settings',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: ['**/settings/budget-allocation.spec.ts'],
+    },
+
+    /**
+     * category-breakdown project (Task 34)
+     * ---------------------------------------
+     * Covers the "Spending by Category" section added in Task 34:
+     *
+     *   1. Category rows render — names and spent amounts visible
+     *   2. Progress bar fill width — [style.width.%] matches spent/budget ratio,
+     *      including 0% when budget is null or 0, and cap at 100%
+     *   3. over-budget class — applied when spent >= 90% of budget; absent otherwise
+     *   4. "No limit" text — shown when budget is null; formatted amount when set
+     *   5. Empty-state card — shown when category_breakdown is empty; hidden otherwise
+     *   6. No-household user — zeroed stats render without crash
+     *
+     * All API calls are mocked via page.route() — no live backend required.
+     * The Angular dev server must be running on E2E_BASE_URL (default: 4202).
+     *
+     * Run only this project with:
+     *   npx playwright test --project=category-breakdown
+     */
+    {
+      name: 'category-breakdown',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: ['**/dashboard/category-breakdown.spec.ts'],
+    },
+
+    /**
+     * category-budgets project (Task 32)
+     * ------------------------------------
+     * Covers the three category-budget API endpoints added in Task 32:
+     *
+     *   GET    /api/category-budgets              — list budgets for household
+     *   PUT    /api/category-budgets              — upsert monthly limit (owner only)
+     *   DELETE /api/category-budgets/{categoryId} — remove budget (owner only, 204)
+     *
+     * Test groups:
+     *   1. GET mocked — empty array, correct JSON shape, 403 without household
+     *   2. PUT mocked — upserted budget shape, 403 non-owner, 404 unknown category,
+     *                   422 invalid monthly_limit
+     *   3. DELETE mocked — 204 success, 403 non-owner, 404 unknown budget
+     *   4. Live GET  — 200 array, 401 unauthenticated, shape validation
+     *                  (skipped when E2E_LIVE_API_URL is absent)
+     *   5. Live PUT  — 200 upsert, idempotent upsert, 403/404/422/401 error cases
+     *                  (skipped when E2E_LIVE_API_URL is absent)
+     *   6. Live DELETE — 204, post-delete GET verifies removal, 404/403/401/422
+     *                    (skipped when E2E_LIVE_API_URL is absent)
+     *
+     * Mocked tests use page.route() — no live backend is required.
+     * Live tests require E2E_LIVE_API_URL, E2E_LIVE_TOKEN, E2E_LIVE_CATEGORY_ID.
+     * The Angular dev server must be running on E2E_BASE_URL (default: 4202).
+     *
+     * Run only this project with:
+     *   npx playwright test --project=category-budgets
+     */
+    {
+      name: 'category-budgets',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: ['**/dashboard/category-budgets.spec.ts'],
+    },
   ],
 });

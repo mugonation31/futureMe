@@ -3,7 +3,7 @@ import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { environment } from '../../../environments/environment';
-import { Category, Transaction, TransactionCreate } from '../models/transaction.model';
+import { Category, CategoryBudget, Transaction, TransactionCreate } from '../models/transaction.model';
 
 @Injectable({ providedIn: 'root' })
 export class TransactionService {
@@ -51,6 +51,27 @@ export class TransactionService {
 
   deleteTransaction(id: string): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/transactions/${id}`, {
+      headers: this.getHeaders(),
+    });
+  }
+
+  getBudgets(): Observable<CategoryBudget[]> {
+    return this.http.get<CategoryBudget[]>(`${this.apiUrl}/category-budgets`, {
+      headers: this.getHeaders(),
+    });
+  }
+
+  upsertBudget(categoryId: string, limit: number): Observable<CategoryBudget> {
+    return this.http.put<CategoryBudget>(`${this.apiUrl}/category-budgets`, {
+      category_id: categoryId,
+      monthly_limit: limit,
+    }, {
+      headers: this.getHeaders(),
+    });
+  }
+
+  deleteBudget(categoryId: string): Observable<void> {
+    return this.http.delete<void>(`${this.apiUrl}/category-budgets/${categoryId}`, {
       headers: this.getHeaders(),
     });
   }

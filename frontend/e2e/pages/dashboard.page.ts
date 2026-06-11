@@ -51,6 +51,10 @@ export class DashboardPage extends BasePage {
   readonly breakdownSection: Locator;
   readonly categoryRows: Locator;
 
+  // Category breakdown empty state (task 34)
+  readonly categoryEmptyState: Locator;
+  readonly categoryEmptyStateLink: Locator;
+
   constructor(page: Page) {
     super(page);
     this.container          = page.locator('.dashboard-container');
@@ -72,6 +76,10 @@ export class DashboardPage extends BasePage {
 
     this.breakdownSection   = page.locator('.breakdown-section');
     this.categoryRows       = page.locator('[data-testid="category-row"]');
+
+    // Empty state shown when category_breakdown is empty (task 34)
+    this.categoryEmptyState     = page.locator('[data-testid="category-empty-state"]');
+    this.categoryEmptyStateLink = page.locator('[data-testid="category-empty-state"] a');
   }
 
   override async goto() {
@@ -108,8 +116,25 @@ export class DashboardPage extends BasePage {
 
   /**
    * Returns the locator for the progress bar fill within a specific row.
+   * Uses the CSS class selector for backwards compatibility with existing tests.
    */
   categoryProgressBar(index: number): Locator {
     return this.categoryRows.nth(index).locator('.progress-bar-fill');
+  }
+
+  /**
+   * Returns the locator for the progress bar fill using the data-testid
+   * attribute (task 34 — preferred selector for new tests).
+   */
+  categoryProgressFill(index: number): Locator {
+    return this.categoryRows.nth(index).locator('[data-testid="category-progress-fill"]');
+  }
+
+  /**
+   * Returns the locator for the budget limit cell within a specific row.
+   * Shows a formatted currency value when a budget is set, or "No limit".
+   */
+  categoryBudgetCell(index: number): Locator {
+    return this.categoryRows.nth(index).locator('.category-budget');
   }
 }

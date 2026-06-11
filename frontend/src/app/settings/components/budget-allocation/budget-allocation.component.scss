@@ -1,0 +1,9 @@
+.budget-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+
+  .form-label {
+    min-width: 140px;
+  }
+}

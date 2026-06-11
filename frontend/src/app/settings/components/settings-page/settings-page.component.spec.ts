@@ -4,6 +4,7 @@ import { of, throwError } from 'rxjs';
 import { SettingsPageComponent } from './settings-page.component';
 import { SettingsService } from '../../services/settings.service';
 import { UserSettings } from '../../models/settings.model';
+import { TransactionService } from '../../../transactions/services/transaction.service';
 
 describe('SettingsPageComponent', () => {
   let component: SettingsPageComponent;
@@ -11,6 +12,10 @@ describe('SettingsPageComponent', () => {
   let mockSettingsService: {
     getSettings: jasmine.Spy;
     updateSettings: jasmine.Spy;
+  };
+  let mockTransactionService: {
+    getCategories: jasmine.Spy;
+    getBudgets: jasmine.Spy;
   };
 
   const mockSettings: UserSettings = {
@@ -27,11 +32,16 @@ describe('SettingsPageComponent', () => {
       getSettings: jasmine.createSpy('getSettings').and.returnValue(of(mockSettings)),
       updateSettings: jasmine.createSpy('updateSettings').and.returnValue(of(mockSettings)),
     };
+    mockTransactionService = {
+      getCategories: jasmine.createSpy('getCategories').and.returnValue(of([])),
+      getBudgets: jasmine.createSpy('getBudgets').and.returnValue(of([])),
+    };
 
     await TestBed.configureTestingModule({
       imports: [SettingsPageComponent, ReactiveFormsModule],
       providers: [
-        { provide: SettingsService, useValue: mockSettingsService }
+        { provide: SettingsService, useValue: mockSettingsService },
+        { provide: TransactionService, useValue: mockTransactionService },
       ]
     }).compileComponents();
 
@@ -134,5 +144,16 @@ describe('SettingsPageComponent', () => {
     // Assert: the payload passed to updateSettings should not have monthly_budget key (or have it as undefined)
     const callArg = mockSettingsService.updateSettings.calls.mostRecent().args[0];
     expect(callArg).not.toEqual(jasmine.objectContaining({ monthly_budget: null }));
+  });
+
+  // Test 9 (Task 33): budget allocation panel is rendered below the existing form
+  it('should render the budget-allocation panel below the settings form', () => {
+    // Arrange + Act — fixture is already detected
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement;
+
+    // Assert
+    const budgetPanel = el.querySelector('app-budget-allocation');
+    expect(budgetPanel).toBeTruthy();
   });
 });

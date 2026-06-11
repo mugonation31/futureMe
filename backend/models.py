@@ -183,8 +183,11 @@ class CategorySpend(BaseModel):
 # Category Budget models
 # ============================================================
 
+_UUID_RE = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+
+
 class CategoryBudgetUpsert(BaseModel):
-    category_id: str = Field(..., min_length=36, max_length=36)
+    category_id: str = Field(..., pattern=_UUID_RE)
     monthly_limit: float = Field(..., gt=0, le=1_000_000_000)
 
 

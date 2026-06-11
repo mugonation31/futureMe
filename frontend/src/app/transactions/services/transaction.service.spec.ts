@@ -3,6 +3,7 @@ import { HttpClientTestingModule, HttpTestingController } from '@angular/common/
 import { TransactionService } from './transaction.service';
 import { AuthService } from '../../core/services/auth.service';
 import { environment } from '../../../environments/environment';
+import { CategoryBudget } from '../models/transaction.model';
 
 describe('TransactionService', () => {
   let service: TransactionService;
@@ -137,6 +138,75 @@ describe('TransactionService', () => {
 
     // Assert
     const req = httpMock.expectOne(`${API_BASE}/transactions/${id}`);
+    expect(req.request.method).toBe('DELETE');
+    req.flush(null);
+  });
+
+  // Test 8 — getBudgets calls GET /api/category-budgets with auth header
+  it('should call GET /api/category-budgets with auth header on getBudgets()', () => {
+    // Arrange
+    const mockBudgets: CategoryBudget[] = [
+      {
+        id: 'budget-1',
+        household_id: 'hh-1',
+        category_id: 'cat-1',
+        category_name: 'Groceries',
+        monthly_limit: 300,
+        created_at: '2026-06-01T00:00:00Z',
+        updated_at: '2026-06-01T00:00:00Z',
+      },
+    ];
+
+    // Act
+    service.getBudgets().subscribe(budgets => {
+      expect(budgets.length).toBe(1);
+      expect(budgets[0].category_name).toBe('Groceries');
+      expect(budgets[0].monthly_limit).toBe(300);
+    });
+
+    // Assert on request
+    const req = httpMock.expectOne(`${API_BASE}/category-budgets`);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.headers.get('Authorization')).toBe(`Bearer ${MOCK_TOKEN}`);
+    req.flush(mockBudgets);
+  });
+
+  // Test 9 — upsertBudget calls PUT /api/category-budgets with body
+  it('should call PUT /api/category-budgets with body on upsertBudget()', () => {
+    // Arrange
+    const categoryId = 'cat-1';
+    const limit = 500;
+    const mockResponse: CategoryBudget = {
+      id: 'budget-1',
+      household_id: 'hh-1',
+      category_id: categoryId,
+      category_name: 'Groceries',
+      monthly_limit: limit,
+      created_at: '2026-06-01T00:00:00Z',
+      updated_at: '2026-06-01T00:00:00Z',
+    };
+
+    // Act
+    service.upsertBudget(categoryId, limit).subscribe();
+
+    // Assert
+    const req = httpMock.expectOne(`${API_BASE}/category-budgets`);
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual({ category_id: categoryId, monthly_limit: limit });
+    expect(req.request.headers.get('Authorization')).toBe(`Bearer ${MOCK_TOKEN}`);
+    req.flush(mockResponse);
+  });
+
+  // Test 10 — deleteBudget calls DELETE /api/category-budgets/{category_id}
+  it('should call DELETE /api/category-budgets/{category_id} on deleteBudget()', () => {
+    // Arrange
+    const categoryId = 'cat-1';
+
+    // Act
+    service.deleteBudget(categoryId).subscribe();
+
+    // Assert
+    const req = httpMock.expectOne(`${API_BASE}/category-budgets/${categoryId}`);
     expect(req.request.method).toBe('DELETE');
     req.flush(null);
   });

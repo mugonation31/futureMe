@@ -380,3 +380,30 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 **Tags:** security, validation, pydantic, backend
 
 ---
+
+## 2026-06-11 — Tasks 41-44: renaming an API request field requires a backward-compatibility 422 test
+
+**What happened:** When `RegisterRequest.name` was renamed to `first_name` + `last_name`, a test was added that POSTs the old payload shape (`{ "name": "Alice Smith" }`) and asserts a 422 response. Without this test, a silent regression would go undetected: the old field name could be accepted (e.g. if a validator was accidentally removed) and callers using the old API would receive a 200 instead of a clear error.
+**Why:** When a required field is renamed, the old name becomes an unknown field. Pydantic v2 ignores unknown fields by default unless `model_config = ConfigDict(extra="forbid")` is set. A backward-compatibility 422 test acts as a contract: it fails immediately if the old name is ever accidentally re-accepted, and it documents the breaking change in code.
+**Next time:** When renaming a required API request field in this project, always add a test asserting the old field name returns 422. Place it alongside the new-field acceptance tests in the same test file. If the model does not already use `extra="forbid"`, consider adding it to ensure unknown fields are rejected at the model level rather than silently ignored.
+**Tags:** testing, api, backend, pydantic
+
+---
+
+## 2026-06-11 — E2E strategy: `page.route()` + `postDataJSON()` to assert request payload shape without a live backend
+
+**What happened:** The signup E2E spec needed to confirm that the frontend posts `first_name` / `last_name` (not the old `full_name`) without requiring a running backend. The solution was `page.route(url, handler)` to intercept the POST, call `route.request().postDataJSON()` inside the handler to capture the body as a parsed object, and assert on the captured object after `page.waitForURL()`.
+**Why:** `page.route()` runs before the request leaves the browser, making it the correct hook for intercepting outgoing payloads. `postDataJSON()` parses the body as JSON, avoiding manual string parsing. This pattern lets a spec assert both the response-driven side (navigation, UI state) and the request-driven side (payload shape) in a single test with no backend.
+**Next time:** Use this pattern whenever a spec needs to verify the shape or content of a request body fired by the Angular app: (1) register `page.route(urlGlob, async route => { capturedBody = await route.request().postDataJSON(); await route.fulfill({...}) })` before navigation; (2) run the form action; (3) assert `capturedBody` after the navigation completes. Wrap `postDataJSON()` in try/catch — it throws if the body is not valid JSON.
+**Tags:** e2e, playwright, testing, api
+
+---
+
+## 2026-06-11 — Building a parseable fake JWT in Playwright E2E specs using btoa() + base64url encoding
+
+**What happened:** The signup E2E spec mocked the register endpoint and needed to return a JWT that `AuthService.loadUserFromToken()` could parse (it calls `atob()` on the payload segment). A real signed token was not needed — only a correctly structured base64url-encoded payload. The pattern was: encode the header and payload with `btoa(JSON.stringify(...))` then apply `.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')` to convert standard base64 to base64url, and join all three segments with `.`.
+**Why:** `btoa()` produces standard base64 (uses `+`, `/`, `=` padding). JWT uses base64url (uses `-`, `_`, no padding). `atob()` on the Angular side accepts both variants, so the conversion is optional for decoding but required for full correctness and for any library that validates format before decoding. The fake signature segment can be any non-empty string since the E2E spec does not verify the signature.
+**Next time:** When a Playwright spec needs a fake JWT that Angular's `AuthService` can parse: use `btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')` for both the header and payload segments, join with `.`, and append any non-empty string as the signature. Include `exp: Math.floor(Date.now() / 1000) + 86400` so the token does not appear expired.
+**Tags:** e2e, playwright, testing, auth
+
+---

@@ -471,7 +471,7 @@ Adds per-category monthly spending limits so the dashboard category breakdown ca
     - `get_dashboard_stats` category breakdown rows include `budget` field: a float when a limit is set, None when not
     - No existing models or DB functions are removed or broken
 
-- [ ] **Task 32 — Backend: category budget API endpoints** (Size: S)
+- [x] **Task 32 — Backend: category budget API endpoints** (Size: S)
   - **Description**: Add to `backend/main.py`: `GET /api/category-budgets` (returns list of `CategoryBudgetResponse` for the household; 403 if no household); `PUT /api/category-budgets/{category_id}` (upserts a monthly limit for the given category; body is `CategoryBudgetUpsert`; 403 if no household; 404 if `category_id` does not belong to a default or household-specific category); `DELETE /api/category-budgets/{category_id}` (removes the limit; 403 if no household; 404 if no budget exists for that category; 204 on success). All three endpoints require owner or member role — no additional role check needed beyond household membership.
   - **Depends on**: Task 31
   - **Files**: `backend/main.py`
@@ -482,7 +482,7 @@ Adds per-category monthly spending limits so the dashboard category breakdown ca
     - `DELETE /api/category-budgets/{category_id}` returns HTTP 204 on success and HTTP 404 if no budget row exists
     - All three endpoints return HTTP 403 when `context.household_id` is None
 
-- [ ] **Task 33 — Frontend: budget allocation panel in settings** (Size: M)
+- [x] **Task 33 — Frontend: budget allocation panel in settings** (Size: M)
   - **Description**: Create `frontend/src/app/settings/components/budget-allocation/budget-allocation.component.ts` (standalone) with `.html` and `.scss`. The component fetches categories via `TransactionService.getCategories()` and existing budgets via a new `getBudgets()` call in `TransactionService`. Renders a list of categories; each row shows the category name and a numeric input for monthly limit (empty means no limit). A "Save" button at the bottom calls `PUT /api/category-budgets/{category_id}` for each row where a value was entered or changed, and `DELETE /api/category-budgets/{category_id}` for rows that were cleared. Add `getBudgets(): Observable<CategoryBudget[]>` and `upsertBudget(categoryId, limit): Observable<CategoryBudget>` and `deleteBudget(categoryId): Observable<void>` methods to `frontend/src/app/transactions/services/transaction.service.ts`. Add a `CategoryBudget` interface to `frontend/src/app/transactions/models/transaction.model.ts`. Embed `BudgetAllocationComponent` inside `SettingsPageComponent` template below the main settings form.
   - **Depends on**: Task 32, Task 24
   - **Files**: `frontend/src/app/settings/components/budget-allocation/budget-allocation.component.ts` (new), `frontend/src/app/settings/components/budget-allocation/budget-allocation.component.html` (new), `frontend/src/app/settings/components/budget-allocation/budget-allocation.component.scss` (new), `frontend/src/app/transactions/services/transaction.service.ts`, `frontend/src/app/transactions/models/transaction.model.ts`, `frontend/src/app/settings/components/settings-page/settings-page.component.html`, `frontend/src/app/settings/components/settings-page/settings-page.component.ts`
@@ -494,7 +494,7 @@ Adds per-category monthly spending limits so the dashboard category breakdown ca
     - Rows with no value and no prior budget are skipped (no API call made)
     - Success and error states are shown inline using the same `.card` and `.btn-primary` pattern as the rest of the settings page
 
-- [ ] **Task 34 — Frontend: dashboard category breakdown with per-category budget progress** (Size: M)
+- [x] **Task 34 — Frontend: dashboard category breakdown with per-category budget progress** (Size: M)
   - **Description**: Update `frontend/src/app/dashboard/services/dashboard.service.ts` to extend the `DashboardStats` interface: add `category_breakdown: CategorySpend[]` where `CategorySpend` has `category_name: string`, `spent: number`, `budget: number | null`. Update `DashboardComponent` template (`dashboard.component.html`) to render a "Spending by category" section below the four stat cards: one row per entry in `category_breakdown`, showing (a) category name, (b) spent amount formatted via `appCurrency` pipe, (c) a horizontal progress bar — if `budget` is non-null, bar width = `min(100, (spent/budget)*100)%` with `var(--caution)` fill when >= 90% and `var(--color-accent)` otherwise; if `budget` is null, render a plain bar segment without a percentage. Add `(d)` the budget limit formatted via `appCurrency` when set, or the text "No limit" when null. Update `dashboard.component.scss` to style the progress bar. If `category_breakdown` is empty, show the empty-state card linking to `/transactions` that was planned in Task 27.
   - **Depends on**: Task 33, Task 27, Task 29
   - **Files**: `frontend/src/app/dashboard/services/dashboard.service.ts`, `frontend/src/app/dashboard/components/dashboard/dashboard.component.html`, `frontend/src/app/dashboard/components/dashboard/dashboard.component.ts`, `frontend/src/app/dashboard/components/dashboard/dashboard.component.scss`

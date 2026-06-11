@@ -7,6 +7,7 @@ import { environment } from '../../../environments/environment';
 export interface CategorySpend {
   category_name: string;
   spent: number;
+  budget: number | null;
 }
 
 export interface DashboardStats {
