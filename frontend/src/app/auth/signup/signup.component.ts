@@ -84,7 +84,10 @@ export class SignupComponent {
       await firstValueFrom(this.authService.register(this.email, this.password, this.firstName, this.lastName));
       this.router.navigate(['/onboarding']);
     } catch (error: any) {
-      this.errorMessage = error.error?.detail || 'Registration failed. Please try again.';
+      const detail = error.error?.detail;
+      this.errorMessage = Array.isArray(detail)
+        ? detail.map((e: any) => e.msg).join(', ')
+        : (detail || 'Registration failed. Please try again.');
     } finally {
       this.loading = false;
     }

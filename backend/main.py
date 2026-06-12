@@ -1,7 +1,7 @@
 """
 FastAPI backend for futureMe app
 """
-from fastapi import FastAPI, Depends, HTTPException, Path, Query, status
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
@@ -12,15 +12,18 @@ from config import settings
 from auth import get_current_user
 from models import (
     UserSettingsUpdate, UserSettingsResponse,
-    DashboardStats, MessageResponse,
+    MessageResponse,
     CurrentUserContext,
     HouseholdCreate, HouseholdJoin, HouseholdResponse, HouseholdPublicResponse,
     RegisterRequest, LoginRequest, AuthResponse, AuthUser,
     RefreshRequest, AccessTokenResponse,
-    CategoryCreate, CategoryResponse,
-    CategoryBudgetUpsert, CategoryBudgetResponse,
-    TransactionCreate, TransactionUpdate, TransactionResponse,
     ForgotPasswordRequest, ResetPasswordRequest,
+    DashboardStats,
+    AccountCreate, AccountUpdate, AccountResponse,
+    IncomeCreate, IncomeUpdate, IncomeResponse,
+    ExpenseCreate, ExpenseUpdate, ExpenseResponse,
+    DebtCreate, DebtUpdate, DebtResponse,
+    SavingsGoalCreate, SavingsGoalUpdate, SavingsGoalResponse,
 )
 import database as db
 import email_service
@@ -48,6 +51,15 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+
+# Authorization policy: all endpoints that require a household must use this
+# dependency. It ensures the user is authenticated AND belongs to a household.
+def require_household(context: CurrentUserContext = Depends(get_current_user)) -> CurrentUserContext:
+    """Dependency that enforces a household is set up, returning the full user context."""
+    if not context.household_id:
+        raise HTTPException(status_code=403, detail="Household not set up")
+    return context
 
 
 def _create_access_token(user_id: str, email: str, display_name: Optional[str]) -> str:
@@ -217,7 +229,12 @@ async def reset_password(body: ResetPasswordRequest):
 async def get_settings(context: CurrentUserContext = Depends(get_current_user)):
     user_settings = await db.get_user_settings(context.user_id)
     if not user_settings:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Settings not found")
+        return UserSettingsResponse(
+            user_id=context.user_id,
+            currency="GBP",
+            monthly_budget=None,
+            updated_at=datetime.now(timezone.utc),
+        )
     return user_settings
 
 
@@ -236,8 +253,205 @@ async def update_settings(
 
 @app.get("/api/dashboard", response_model=DashboardStats)
 async def get_dashboard(context: CurrentUserContext = Depends(get_current_user)):
-    stats = await db.get_dashboard_stats(context.user_id, context.household_id)
-    return stats
+    if not context.household_id:
+        return DashboardStats()
+    stats = await db.get_dashboard_stats(context.household_id)
+    return DashboardStats(**stats)
+
+
+# ============================================================
+# Accounts endpoints
+# ============================================================
+
+@app.get("/api/accounts", response_model=list[AccountResponse])
+async def list_accounts(ctx: CurrentUserContext = Depends(require_household)):
+    return await db.get_accounts(ctx.household_id)
+
+
+@app.post("/api/accounts", response_model=AccountResponse, status_code=201)
+async def create_account(
+    body: AccountCreate,
+    ctx: CurrentUserContext = Depends(require_household),
+):
+    return await db.create_account(ctx.household_id, body)
+
+
+@app.patch("/api/accounts/{account_id}", response_model=AccountResponse)
+async def update_account(
+    account_id: str,
+    body: AccountUpdate,
+    ctx: CurrentUserContext = Depends(require_household),
+):
+    account = await db.update_account(account_id, ctx.household_id, body)
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return account
+
+
+@app.delete("/api/accounts/{account_id}", status_code=204)
+async def delete_account(
+    account_id: str,
+    ctx: CurrentUserContext = Depends(require_household),
+):
+    deleted = await db.delete_account(account_id, ctx.household_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+
+# ============================================================
+# Income endpoints
+# ============================================================
+
+@app.get("/api/income", response_model=list[IncomeResponse])
+async def list_income(ctx: CurrentUserContext = Depends(require_household)):
+    return await db.get_income_entries(ctx.household_id)
+
+
+@app.post("/api/income", response_model=IncomeResponse, status_code=201)
+async def create_income(
+    body: IncomeCreate,
+    ctx: CurrentUserContext = Depends(require_household),
+):
+    return await db.create_income_entry(ctx.household_id, ctx.user_id, body)
+
+
+@app.patch("/api/income/{entry_id}", response_model=IncomeResponse)
+async def update_income(
+    entry_id: str,
+    body: IncomeUpdate,
+    ctx: CurrentUserContext = Depends(require_household),
+):
+    entry = await db.update_income_entry(entry_id, ctx.household_id, body)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Income entry not found")
+    return entry
+
+
+@app.delete("/api/income/{entry_id}", status_code=204)
+async def delete_income(
+    entry_id: str,
+    ctx: CurrentUserContext = Depends(require_household),
+):
+    deleted = await db.delete_income_entry(entry_id, ctx.household_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Income entry not found")
+
+
+# ============================================================
+# Expenses endpoints
+# ============================================================
+
+@app.get("/api/expenses", response_model=list[ExpenseResponse])
+async def list_expenses(ctx: CurrentUserContext = Depends(require_household)):
+    return await db.get_expenses(ctx.household_id)
+
+
+@app.post("/api/expenses", response_model=ExpenseResponse, status_code=201)
+async def create_expense(
+    body: ExpenseCreate,
+    ctx: CurrentUserContext = Depends(require_household),
+):
+    return await db.create_expense(ctx.household_id, ctx.user_id, body)
+
+
+@app.patch("/api/expenses/{expense_id}", response_model=ExpenseResponse)
+async def update_expense(
+    expense_id: str,
+    body: ExpenseUpdate,
+    ctx: CurrentUserContext = Depends(require_household),
+):
+    expense = await db.update_expense(expense_id, ctx.household_id, body)
+    if expense is None:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    return expense
+
+
+@app.delete("/api/expenses/{expense_id}", status_code=204)
+async def delete_expense(
+    expense_id: str,
+    ctx: CurrentUserContext = Depends(require_household),
+):
+    deleted = await db.delete_expense(expense_id, ctx.household_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Expense not found")
+
+
+# ============================================================
+# Debts endpoints
+# ============================================================
+
+@app.get("/api/debts", response_model=list[DebtResponse])
+async def list_debts(ctx: CurrentUserContext = Depends(require_household)):
+    return await db.get_debts(ctx.household_id)
+
+
+@app.post("/api/debts", response_model=DebtResponse, status_code=201)
+async def create_debt(
+    body: DebtCreate,
+    ctx: CurrentUserContext = Depends(require_household),
+):
+    return await db.create_debt(ctx.household_id, ctx.user_id, body)
+
+
+@app.patch("/api/debts/{debt_id}", response_model=DebtResponse)
+async def update_debt(
+    debt_id: str,
+    body: DebtUpdate,
+    ctx: CurrentUserContext = Depends(require_household),
+):
+    debt = await db.update_debt(debt_id, ctx.household_id, body)
+    if debt is None:
+        raise HTTPException(status_code=404, detail="Debt not found")
+    return debt
+
+
+@app.delete("/api/debts/{debt_id}", status_code=204)
+async def delete_debt(
+    debt_id: str,
+    ctx: CurrentUserContext = Depends(require_household),
+):
+    deleted = await db.delete_debt(debt_id, ctx.household_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Debt not found")
+
+
+# ============================================================
+# Savings Goals endpoints
+# ============================================================
+
+@app.get("/api/savings-goals", response_model=list[SavingsGoalResponse])
+async def list_savings_goals(ctx: CurrentUserContext = Depends(require_household)):
+    return await db.get_savings_goals(ctx.household_id)
+
+
+@app.post("/api/savings-goals", response_model=SavingsGoalResponse, status_code=201)
+async def create_savings_goal(
+    body: SavingsGoalCreate,
+    ctx: CurrentUserContext = Depends(require_household),
+):
+    return await db.create_savings_goal(ctx.household_id, body)
+
+
+@app.patch("/api/savings-goals/{goal_id}", response_model=SavingsGoalResponse)
+async def update_savings_goal(
+    goal_id: str,
+    body: SavingsGoalUpdate,
+    ctx: CurrentUserContext = Depends(require_household),
+):
+    goal = await db.update_savings_goal(goal_id, ctx.household_id, body)
+    if goal is None:
+        raise HTTPException(status_code=404, detail="Savings goal not found")
+    return goal
+
+
+@app.delete("/api/savings-goals/{goal_id}", status_code=204)
+async def delete_savings_goal(
+    goal_id: str,
+    ctx: CurrentUserContext = Depends(require_household),
+):
+    deleted = await db.delete_savings_goal(goal_id, ctx.household_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Savings goal not found")
 
 
 # ============================================================
@@ -306,146 +520,3 @@ async def join_household(
     return household
 
 
-# ============================================================
-# Category endpoints
-# ============================================================
-
-@app.get("/api/categories", response_model=list[CategoryResponse])
-async def get_categories(context: CurrentUserContext = Depends(get_current_user)):
-    if context.household_id is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
-    return await db.get_categories(context.household_id)
-
-
-@app.post("/api/categories", response_model=CategoryResponse, status_code=201)
-async def create_category(
-    body: CategoryCreate,
-    context: CurrentUserContext = Depends(get_current_user),
-):
-    if context.household_id is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
-    return await db.create_category(context.household_id, body.name, body.icon, body.color)
-
-
-# ============================================================
-# Category Budget endpoints
-# ============================================================
-
-@app.get("/api/category-budgets", response_model=list[CategoryBudgetResponse])
-async def get_category_budgets(context: CurrentUserContext = Depends(get_current_user)):
-    if context.household_id is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
-    return await db.get_category_budgets(context.household_id)
-
-
-@app.put("/api/category-budgets", response_model=CategoryBudgetResponse)
-async def upsert_category_budget(
-    body: CategoryBudgetUpsert,
-    context: CurrentUserContext = Depends(get_current_user),
-):
-    if context.household_id is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
-    role = await db.get_member_role(context.user_id, context.household_id)
-    if role != "owner":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the household owner can set a category budget",
-        )
-    result = await db.upsert_category_budget(context.household_id, body)
-    if result is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
-    return result
-
-
-_UUID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-
-
-@app.delete("/api/category-budgets/{category_id}", status_code=204)
-async def delete_category_budget(
-    category_id: str = Path(pattern=_UUID_PATTERN),
-    context: CurrentUserContext = Depends(get_current_user),
-):
-    if context.household_id is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
-    role = await db.get_member_role(context.user_id, context.household_id)
-    if role != "owner":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the household owner can delete a category budget",
-        )
-    deleted = await db.delete_category_budget(context.household_id, category_id)
-    if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category budget not found")
-
-
-# ============================================================
-# Transaction endpoints
-# ============================================================
-
-@app.get("/api/transactions", response_model=list[TransactionResponse])
-async def get_transactions(
-    month: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}$"),
-    context: CurrentUserContext = Depends(get_current_user),
-):
-    if context.household_id is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
-    return await db.get_transactions(context.household_id, month)
-
-
-@app.post("/api/transactions", response_model=TransactionResponse, status_code=201)
-async def create_transaction(
-    body: TransactionCreate,
-    context: CurrentUserContext = Depends(get_current_user),
-):
-    if context.household_id is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
-    return await db.create_transaction(context.household_id, context.user_id, body)
-
-
-@app.get("/api/transactions/{transaction_id}", response_model=TransactionResponse)
-async def get_transaction(
-    transaction_id: str,
-    context: CurrentUserContext = Depends(get_current_user),
-):
-    if context.household_id is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
-    t = await db.get_transaction(context.household_id, transaction_id)
-    if not t:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
-    return t
-
-
-@app.patch("/api/transactions/{transaction_id}", response_model=TransactionResponse)
-async def update_transaction(
-    transaction_id: str,
-    body: TransactionUpdate,
-    context: CurrentUserContext = Depends(get_current_user),
-):
-    if context.household_id is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
-    existing = await db.get_transaction(context.household_id, transaction_id)
-    if not existing:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
-    if existing["user_id"] != context.user_id:
-        role = await db.get_member_role(context.user_id, context.household_id)
-        if role != "owner":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to edit this transaction")
-    updated = await db.update_transaction(context.household_id, transaction_id, body)
-    return updated
-
-
-@app.delete("/api/transactions/{transaction_id}", status_code=204)
-async def delete_transaction(
-    transaction_id: str,
-    context: CurrentUserContext = Depends(get_current_user),
-):
-    if context.household_id is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Household required")
-    existing = await db.get_transaction(context.household_id, transaction_id)
-    if not existing:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
-    if existing["user_id"] != context.user_id:
-        role = await db.get_member_role(context.user_id, context.household_id)
-        if role != "owner":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete this transaction")
-    await db.delete_transaction(context.household_id, transaction_id)

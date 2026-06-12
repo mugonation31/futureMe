@@ -1,12 +1,9 @@
 """
 Pydantic models for request/response validation
 """
-import re
-
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional, Literal
-from datetime import datetime
-from datetime import date as date_type
+from datetime import datetime, date as date_type
 
 _SPECIAL_CHARS = set("!@#$%^&*()_+-=[]{}|;':\",./<>?")
 
@@ -19,6 +16,15 @@ def _validate_password_complexity(v: str) -> str:
         raise ValueError(
             "Password must contain at least one digit and one special character (e.g. !, @, #)."
         )
+    return v
+
+
+def _sanitise_text(v: str) -> str:
+    """Strip whitespace, reject NUL bytes and BiDi control characters."""
+    v = v.strip()
+    bidi = set(range(0x202A, 0x202F)) | set(range(0x2066, 0x206A))
+    if any(ord(c) == 0 or ord(c) in bidi for c in v):
+        raise ValueError("contains invalid characters")
     return v
 
 
@@ -109,113 +115,6 @@ class UserSettingsResponse(BaseModel):
 
 
 # ============================================================
-# Category models
-# ============================================================
-
-class CategoryCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    icon: Optional[str] = Field(None, max_length=100)
-    color: Optional[str] = Field(None, max_length=7)
-
-    @field_validator("color")
-    @classmethod
-    def color_must_be_hex(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and not re.fullmatch(r"#[0-9A-Fa-f]{6}", v):
-            raise ValueError("color must be a valid hex color code (e.g. #FF5733)")
-        return v
-
-
-class CategoryResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    household_id: Optional[str] = None
-    name: str
-    icon: Optional[str] = None
-    color: Optional[str] = None
-    is_default: bool
-    created_at: datetime
-
-
-# ============================================================
-# Transaction models
-# ============================================================
-
-class TransactionCreate(BaseModel):
-    amount: float = Field(..., gt=0)
-    type: Literal["expense", "income"]
-    description: Optional[str] = None
-    date: date_type = Field(default_factory=date_type.today)
-    category_id: Optional[str] = None
-
-
-class TransactionUpdate(BaseModel):
-    amount: Optional[float] = Field(None, gt=0)
-    type: Optional[Literal["expense", "income"]] = None
-    description: Optional[str] = None
-    date: Optional[date_type] = None
-    category_id: Optional[str] = None
-
-
-class TransactionResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    household_id: str
-    user_id: str
-    category_id: Optional[str] = None
-    category_name: Optional[str] = None
-    amount: float
-    type: str
-    description: Optional[str] = None
-    date: date_type
-    created_at: datetime
-    updated_at: datetime
-
-
-class CategorySpend(BaseModel):
-    category_name: str
-    spent: float
-    budget: Optional[float] = None
-
-
-# ============================================================
-# Category Budget models
-# ============================================================
-
-_UUID_RE = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-
-
-class CategoryBudgetUpsert(BaseModel):
-    category_id: str = Field(..., pattern=_UUID_RE)
-    monthly_limit: float = Field(..., gt=0, le=1_000_000_000)
-
-
-class CategoryBudgetResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    household_id: str
-    category_id: str
-    category_name: str
-    monthly_limit: float
-    created_at: datetime
-    updated_at: datetime
-
-
-# ============================================================
-# Dashboard models
-# ============================================================
-
-class DashboardStats(BaseModel):
-    total_budget: float = 0.0
-    total_spent: float = 0.0
-    remaining_budget: float = 0.0
-    savings_rate: float = 0.0
-    category_breakdown: list[CategorySpend] = []
-
-
-# ============================================================
 # Shared models
 # ============================================================
 
@@ -256,6 +155,277 @@ class HouseholdResponse(BaseModel):
     invite_code: str
     created_at: datetime
     created_by: str
+
+
+# ============================================================
+# Account models
+# ============================================================
+
+class AccountCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    type: Literal["checking", "savings", "cash"]
+    balance: float = Field(default=0.0, ge=0)
+    currency: str = Field(default="GBP", min_length=3, max_length=3)
+
+    @field_validator("name")
+    @classmethod
+    def sanitise_text_fields(cls, v):
+        return _sanitise_text(v)
+
+
+class AccountUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    type: Optional[Literal["checking", "savings", "cash"]] = None
+    balance: Optional[float] = Field(None, ge=0)
+    currency: Optional[str] = Field(None, min_length=3, max_length=3)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def sanitise_text_fields(cls, v):
+        if v is None:
+            return v
+        return _sanitise_text(v)
+
+
+class AccountResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    household_id: str
+    name: str
+    type: str
+    balance: float
+    currency: str
+    created_at: datetime
+    updated_at: datetime
+
+
+# ============================================================
+# Income models
+# ============================================================
+
+class IncomeCreate(BaseModel):
+    source: str = Field(..., min_length=1, max_length=200)
+    amount: float = Field(..., gt=0)
+    frequency: Literal["monthly", "weekly", "annual"]
+
+    @field_validator("source")
+    @classmethod
+    def sanitise_text_fields(cls, v):
+        return _sanitise_text(v)
+
+
+class IncomeUpdate(BaseModel):
+    source: Optional[str] = Field(None, min_length=1, max_length=200)
+    amount: Optional[float] = Field(None, gt=0)
+    frequency: Optional[Literal["monthly", "weekly", "annual"]] = None
+
+    @field_validator("source", mode="before")
+    @classmethod
+    def sanitise_text_fields(cls, v):
+        if v is None:
+            return v
+        return _sanitise_text(v)
+
+
+class IncomeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    household_id: str
+    user_id: str
+    source: str
+    amount: float
+    frequency: str
+    created_at: datetime
+    updated_at: datetime
+
+
+# ============================================================
+# Expense models
+# ============================================================
+
+class ExpenseCreate(BaseModel):
+    category: Optional[str] = Field(None, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    amount: float = Field(..., gt=0)
+    date: date_type = Field(default_factory=date_type.today)
+    is_recurring: bool = False
+
+    @field_validator("category", "description", mode="before")
+    @classmethod
+    def sanitise_text_fields(cls, v):
+        if v is None:
+            return v
+        return _sanitise_text(v)
+
+
+class ExpenseUpdate(BaseModel):
+    category: Optional[str] = Field(None, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    amount: Optional[float] = Field(None, gt=0)
+    date: Optional[date_type] = None
+    is_recurring: Optional[bool] = None
+
+    @field_validator("category", "description", mode="before")
+    @classmethod
+    def sanitise_text_fields(cls, v):
+        if v is None:
+            return v
+        return _sanitise_text(v)
+
+
+class ExpenseResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    household_id: str
+    user_id: str
+    category: Optional[str]
+    description: Optional[str]
+    amount: float
+    date: date_type
+    is_recurring: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+# ============================================================
+# Debt models
+# ============================================================
+
+class DebtCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    balance: float = Field(..., gt=0)
+    interest_rate: float = Field(default=0.0, ge=0, le=100)
+    minimum_payment: float = Field(default=0.0, ge=0)
+    target_payoff_date: Optional[date_type] = None
+
+    @field_validator("name")
+    @classmethod
+    def sanitise_text_fields(cls, v):
+        return _sanitise_text(v)
+
+
+class DebtUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    balance: Optional[float] = Field(None, ge=0)
+    interest_rate: Optional[float] = Field(None, ge=0, le=100)
+    minimum_payment: Optional[float] = Field(None, ge=0)
+    target_payoff_date: Optional[date_type] = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def sanitise_text_fields(cls, v):
+        if v is None:
+            return v
+        return _sanitise_text(v)
+
+
+class DebtResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    household_id: str
+    user_id: str
+    name: str
+    balance: float
+    interest_rate: float
+    minimum_payment: float
+    target_payoff_date: Optional[date_type]
+    created_at: datetime
+    updated_at: datetime
+
+
+# ============================================================
+# Savings goal models
+# ============================================================
+
+class SavingsGoalCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    target_amount: float = Field(..., gt=0)
+    current_amount: float = Field(default=0.0, ge=0)
+    deadline: Optional[date_type] = None
+
+    @field_validator("name")
+    @classmethod
+    def sanitise_text_fields(cls, v):
+        return _sanitise_text(v)
+
+    @field_validator("current_amount")
+    @classmethod
+    def current_must_not_exceed_target(cls, v, info):
+        target = info.data.get("target_amount")
+        if target is not None and v > target:
+            raise ValueError("current_amount cannot exceed target_amount")
+        return v
+
+
+class SavingsGoalUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    target_amount: Optional[float] = Field(None, gt=0)
+    current_amount: Optional[float] = Field(None, ge=0)
+    deadline: Optional[date_type] = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def sanitise_text_fields(cls, v):
+        if v is None:
+            return v
+        return _sanitise_text(v)
+
+    @field_validator("current_amount")
+    @classmethod
+    def current_must_not_exceed_target(cls, v, info):
+        target = info.data.get("target_amount")
+        if v is not None and target is not None and v > target:
+            raise ValueError("current_amount cannot exceed target_amount")
+        return v
+
+
+class SavingsGoalResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    household_id: str
+    name: str
+    target_amount: float
+    current_amount: float
+    deadline: Optional[date_type]
+    created_at: datetime
+    updated_at: datetime
+
+
+# ============================================================
+# Dashboard models
+# ============================================================
+
+class DebtSummary(BaseModel):
+    total_owed: float = 0.0
+    total_minimum_payments: float = 0.0
+    debt_count: int = 0
+
+
+class EmergencyFundStatus(BaseModel):
+    current_amount: float = 0.0
+    target_amount: float = 0.0
+    months_covered: Optional[float] = None
+
+
+class SavingsProgress(BaseModel):
+    goal_name: str
+    target_amount: float
+    current_amount: float
+    percent: float
+
+
+class DashboardStats(BaseModel):
+    total_income: float = 0.0
+    total_expenses: float = 0.0
+    net_position: float = 0.0
+    emergency_fund_status: EmergencyFundStatus = Field(default_factory=EmergencyFundStatus)
+    debt_summary: DebtSummary = Field(default_factory=DebtSummary)
+    savings_progress: list[SavingsProgress] = Field(default_factory=list)
 
 
 class HouseholdMemberResponse(BaseModel):

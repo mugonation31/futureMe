@@ -90,15 +90,28 @@ describe('NavigationComponent', () => {
     expect(component.menuOpen).toBeFalse();
   });
 
-  it('should display nav links for Dashboard, Transactions, Settings', () => {
+  // Test 8: should display links for all 7 screens when authenticated (including Settings)
+  it('should display links for all 7 screens when authenticated (including Settings)', () => {
     mockCurrentUser$.next({ id: '123', email: 'test@test.com', display_name: 'Test' });
     fixture.detectChanges();
 
     const navLinks = fixture.nativeElement.querySelectorAll('.nav-links a');
     const linkTexts = Array.from(navLinks).map((link: any) => link.textContent.trim());
 
-    expect(linkTexts).toContain('Dashboard');
-    expect(linkTexts).toContain('Transactions');
+    expect(linkTexts).toContain('Home');
+    expect(linkTexts).toContain('Money Plan');
+    expect(linkTexts).toContain('Debts');
+    expect(linkTexts).toContain('Emergency Fund');
+    expect(linkTexts).toContain('Monthly Review');
+    expect(linkTexts).toContain('Opportunities');
     expect(linkTexts).toContain('Settings');
+  });
+
+  // Test 9: should not display nav links when unauthenticated
+  it('should not display nav links when unauthenticated', () => {
+    // currentUser$ starts as null (not logged in)
+    fixture.detectChanges();
+    const nav = fixture.nativeElement.querySelector('nav');
+    expect(nav).toBeNull();
   });
 });

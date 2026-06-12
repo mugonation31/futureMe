@@ -16,7 +16,7 @@
  *   3. Preflight requesting DELETE (allowed method) → listed in Access-Control-Allow-Methods
  *   4. Preflight requesting HEAD (disallowed method) → not listed in Access-Control-Allow-Methods
  *   5. Regression — /health GET with listed origin returns Access-Control-Allow-Origin
- *   6. Regression — GET /api/transactions with listed origin returns 401/403
+ *   6. Regression — GET /api/households/me with listed origin returns 401/403
  *      (not a network-level CORS block) and carries Access-Control-Allow-Origin
  *   7. Regression — POST /api/auth/login with listed origin returns a JSON response
  *      (either 200 with token or 4xx for bad credentials) with Access-Control-Allow-Origin
@@ -104,10 +104,10 @@ test.describe('SEC-4 Scenario 3 — DELETE is in the allowed methods list', () =
     'OPTIONS preflight requesting DELETE returns DELETE in Access-Control-Allow-Methods',
     async () => {
       const page = new CorsApiPage();
-      // Use a transaction-like path; the route existence does not matter for
+      // Use a household-like path; the route existence does not matter for
       // the preflight — Starlette's CORS middleware responds before routing.
       const result = await page.preflight(
-        '/api/transactions/00000000-0000-0000-0000-000000000000',
+        '/api/households/00000000-0000-0000-0000-000000000000',
         LISTED_ORIGIN,
         'DELETE',
         'Authorization, Content-Type',
@@ -212,17 +212,17 @@ test.describe('SEC-4 Scenario 5 — regression: existing endpoints work with lis
   );
 
   // ---------------------------------------------------------------------------
-  // Scenario 5b — Regression: GET /api/transactions is reachable (auth enforced)
+  // Scenario 5b — Regression: GET /api/households/me is reachable (auth enforced)
   // ---------------------------------------------------------------------------
 
   test(
-    'GET /api/transactions with listed Origin returns an auth error (not a CORS block) and carries Access-Control-Allow-Origin',
+    'GET /api/households/me with listed Origin returns an auth error (not a CORS block) and carries Access-Control-Allow-Origin',
     async () => {
       const page = new CorsApiPage();
       // No token → backend should return 401 or 403 (auth guard), not a
       // network-level failure.  Crucially the CORS headers must still be present
       // so the browser can read the error response.
-      const result = await page.simpleGet('/api/transactions', LISTED_ORIGIN);
+      const result = await page.simpleGet('/api/households/me', LISTED_ORIGIN);
 
       // Backend should respond with an HTTP status (not a network error)
       expect([401, 403, 422]).toContain(result.status);

@@ -3,6 +3,7 @@ import { HttpClientTestingModule, HttpTestingController } from '@angular/common/
 import { DashboardService } from './dashboard.service';
 import { AuthService } from '../../core/services/auth.service';
 import { environment } from '../../../environments/environment';
+// throwError import removed — not needed after callWithHeaders fix
 
 describe('DashboardService', () => {
   let service: DashboardService;
@@ -72,6 +73,37 @@ describe('DashboardService', () => {
       expect(req.request.method).toBe('GET');
       expect(req.request.headers.get('Authorization')).toBe('Bearer fake-token');
       req.flush(mockStats);
+    });
+  });
+
+  it('should throw "No auth token available" when getToken() returns null (getHeaders direct call)', () => {
+    // Arrange
+    mockAuthService.getToken.and.returnValue(null);
+
+    // Act & Assert
+    expect(() => (service as any)['getHeaders']()).toThrowError('No auth token available');
+  });
+
+  it('should return an Observable error (not throw synchronously) from getStats() when token is null', (done: DoneFn) => {
+    // Arrange
+    mockAuthService.getToken.and.returnValue(null);
+
+    // Act — should NOT throw, should return an observable that errors
+    let threwSynchronously = false;
+    let obs: any;
+    try {
+      obs = service.getStats();
+    } catch {
+      threwSynchronously = true;
+    }
+
+    expect(threwSynchronously).toBeFalse();
+    obs.subscribe({
+      next: () => fail('should not emit'),
+      error: (err: Error) => {
+        expect(err.message).toBe('No auth token available');
+        done();
+      },
     });
   });
 });

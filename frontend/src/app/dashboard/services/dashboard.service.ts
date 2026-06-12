@@ -1,22 +1,11 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, throwError } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { environment } from '../../../environments/environment';
+import { DashboardStats } from '../../core/models/money.models';
 
-export interface CategorySpend {
-  category_name: string;
-  spent: number;
-  budget: number | null;
-}
-
-export interface DashboardStats {
-  total_budget: number;
-  total_spent: number;
-  remaining_budget: number;
-  savings_rate: number;
-  category_breakdown: CategorySpend[];
-}
+export { DashboardStats };
 
 @Injectable({ providedIn: 'root' })
 export class DashboardService {
@@ -26,13 +15,27 @@ export class DashboardService {
 
   private getHeaders(): HttpHeaders {
     const token = this.authService.getToken();
+    if (!token) {
+      throw new Error('No auth token available');
+    }
     return new HttpHeaders({
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
     });
   }
 
+  private callWithHeaders<T>(httpCall: (headers: HttpHeaders) => Observable<T>): Observable<T> {
+    try {
+      const headers = this.getHeaders();
+      return httpCall(headers);
+    } catch (err) {
+      return throwError(() => err);
+    }
+  }
+
   getStats(): Observable<DashboardStats> {
-    return this.http.get<DashboardStats>(`${this.apiUrl}/dashboard`, { headers: this.getHeaders() });
+    return this.callWithHeaders(headers =>
+      this.http.get<DashboardStats>(`${this.apiUrl}/dashboard`, { headers })
+    );
   }
 }

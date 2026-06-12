@@ -51,11 +51,6 @@ describe('App Routes', () => {
     expect(route).toBeTruthy();
   });
 
-  it('should have a transactions route', () => {
-    const route = routes.find(r => r.path === 'transactions');
-    expect(route).toBeTruthy();
-  });
-
   // Test 5: authGuard on protected routes
   it('should have authGuard on dashboard route', () => {
     const route = routes.find(r => r.path === 'dashboard');
@@ -72,11 +67,6 @@ describe('App Routes', () => {
     expect(route?.canActivate).toContain(authGuard);
   });
 
-  it('should have authGuard on transactions route', () => {
-    const route = routes.find(r => r.path === 'transactions');
-    expect(route?.canActivate).toContain(authGuard);
-  });
-
   // Test 6: householdGuard on guarded routes
   it('should have householdGuard on dashboard route', () => {
     const route = routes.find(r => r.path === 'dashboard');
@@ -85,11 +75,6 @@ describe('App Routes', () => {
 
   it('should have householdGuard on settings route', () => {
     const route = routes.find(r => r.path === 'settings');
-    expect(route?.canActivate).toContain(householdGuard);
-  });
-
-  it('should have householdGuard on transactions route', () => {
-    const route = routes.find(r => r.path === 'transactions');
     expect(route?.canActivate).toContain(householdGuard);
   });
 

@@ -7,7 +7,11 @@ import { ResetPasswordComponent } from './auth/reset-password/reset-password.com
 import { DashboardComponent } from './dashboard/components/dashboard/dashboard.component';
 import { SettingsPageComponent } from './settings/components/settings-page/settings-page.component';
 import { OnboardingComponent } from './onboarding/onboarding.component';
-import { TransactionListComponent } from './transactions/components/transaction-list/transaction-list.component';
+import { DebtsComponent } from './debts/debts.component';
+import { MoneyPlanComponent } from './money-plan/money-plan.component';
+import { EmergencyFundComponent } from './emergency-fund/emergency-fund.component';
+import { OpportunitiesComponent } from './opportunities/opportunities.component';
+import { MonthlyReviewComponent } from './monthly-review/monthly-review.component';
 import { authGuard } from './auth/guards/auth.guard';
 import { householdGuard } from './auth/guards/household.guard';
 
@@ -20,5 +24,9 @@ export const routes: Routes = [
   { path: 'onboarding', component: OnboardingComponent, canActivate: [authGuard] },
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard, householdGuard] },
   { path: 'settings', component: SettingsPageComponent, canActivate: [authGuard, householdGuard] },
-  { path: 'transactions', component: TransactionListComponent, canActivate: [authGuard, householdGuard] },
+  { path: 'debts', component: DebtsComponent, canActivate: [authGuard, householdGuard] },
+  { path: 'money-plan', component: MoneyPlanComponent, canActivate: [authGuard, householdGuard] },
+  { path: 'emergency-fund', component: EmergencyFundComponent, canActivate: [authGuard, householdGuard] },
+  { path: 'opportunities', component: OpportunitiesComponent, canActivate: [authGuard, householdGuard] },
+  { path: 'monthly-review', component: MonthlyReviewComponent, canActivate: [authGuard, householdGuard] },
 ];

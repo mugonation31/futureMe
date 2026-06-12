@@ -1,0 +1,76 @@
+<div class="money-plan-page">
+  <h1 class="page-title">Money Plan</h1>
+
+  <div *ngIf="loading" class="loading">Loading...</div>
+
+  <div *ngIf="!loading" class="plan-grid">
+    <!-- Income Section -->
+    <section class="section">
+      <div class="section-header">
+        <h2>Income</h2>
+        <button (click)="showAddIncome = !showAddIncome" class="btn-add">+ Add</button>
+      </div>
+
+      <form *ngIf="showAddIncome" [formGroup]="incomeForm" (ngSubmit)="addIncome()" class="inline-form">
+        <input formControlName="source" placeholder="Source (e.g. Salary)" />
+        <input formControlName="amount" type="number" placeholder="Amount" />
+        <select formControlName="frequency">
+          <option value="monthly">Monthly</option>
+          <option value="weekly">Weekly</option>
+          <option value="annual">Annual</option>
+        </select>
+        <button type="submit" [disabled]="incomeForm.invalid">Add</button>
+        <button type="button" (click)="showAddIncome = false">Cancel</button>
+      </form>
+
+      <div *ngFor="let item of income" class="row-item">
+        <span class="row-name">{{ item.source }}</span>
+        <span class="row-amount">{{ item.amount | currency:'GBP':'symbol':'1.0-0' }}/{{ item.frequency }}</span>
+        <button (click)="deleteIncome(item.id)" class="btn-delete">&#x00D7;</button>
+      </div>
+      <p *ngIf="!income.length" class="empty-state">No income added yet</p>
+    </section>
+
+    <!-- Expenses Section -->
+    <section class="section">
+      <div class="section-header">
+        <h2>Expenses</h2>
+        <button (click)="showAddExpense = !showAddExpense" class="btn-add">+ Add</button>
+      </div>
+
+      <form *ngIf="showAddExpense" [formGroup]="expenseForm" (ngSubmit)="addExpense()" class="inline-form">
+        <input formControlName="category" placeholder="Category (e.g. Rent)" />
+        <input formControlName="description" placeholder="Description (optional)" />
+        <input formControlName="amount" type="number" placeholder="Amount" />
+        <button type="submit" [disabled]="expenseForm.invalid">Add</button>
+        <button type="button" (click)="showAddExpense = false">Cancel</button>
+      </form>
+
+      <div *ngFor="let item of expenses" class="row-item">
+        <span class="row-name">{{ item.category }}</span>
+        <span class="row-description">{{ item.description }}</span>
+        <span class="row-amount">{{ item.amount | currency:'GBP':'symbol':'1.0-0' }}</span>
+        <button (click)="deleteExpense(item.id)" class="btn-delete">&#x00D7;</button>
+      </div>
+      <p *ngIf="!expenses.length" class="empty-state">No expenses added yet</p>
+    </section>
+  </div>
+
+  <!-- Monthly Summary Bar -->
+  <div class="summary-bar">
+    <div class="summary-item">
+      <span class="label">Total In</span>
+      <span class="value positive">{{ totalMonthlyIncome | currency:'GBP':'symbol':'1.0-0' }}</span>
+    </div>
+    <div class="summary-item">
+      <span class="label">Total Out</span>
+      <span class="value">{{ totalMonthlyExpenses | currency:'GBP':'symbol':'1.0-0' }}</span>
+    </div>
+    <div class="summary-item">
+      <span class="label">{{ surplus >= 0 ? 'Surplus' : 'Deficit' }}</span>
+      <span class="value" [class.positive]="surplus >= 0" [class.caution]="surplus < 0">
+        {{ surplus | currency:'GBP':'symbol':'1.0-0' }}
+      </span>
+    </div>
+  </div>
+</div>

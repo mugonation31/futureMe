@@ -45,38 +45,12 @@ export default defineConfig({
       use: { baseURL: "http://localhost:8002" },
     },
     {
-      // Transactions + categories API smoke tests (no browser).
-      // Run with: npx playwright test --project=transactions-api
-      name: "transactions-api",
-      testDir: "./e2e/specs/smoke",
-      testMatch: ["**/transactions-api.spec.ts"],
-      use: { baseURL: "http://localhost:8002" },
-    },
-    {
-      // Transactions UI smoke tests (browser, mocked backend).
-      // Requires the Angular dev server on http://localhost:4200.
-      // Run with: npx playwright test --project=transactions-ui
-      name: "transactions-ui",
-      testDir: "./e2e/specs/smoke",
-      testMatch: ["**/transactions-ui.spec.ts"],
-      use: { baseURL: "http://localhost:4200" },
-    },
-    {
       // Password-reset API smoke tests (no browser).
       // Tests POST /api/auth/forgot-password and POST /api/auth/reset-password.
       // Run with: npx playwright test --project=password-reset-api
       name: "password-reset-api",
       testDir: "./e2e/specs/smoke",
       testMatch: ["**/password-reset-api.spec.ts"],
-      use: { baseURL: "http://localhost:8002" },
-    },
-    {
-      // SEC-3: Category hex colour validation API smoke tests (no browser).
-      // Tests POST /api/categories with valid/invalid color values.
-      // Run with: npx playwright test --project=categories-color-api
-      name: "categories-color-api",
-      testDir: "./e2e/specs/smoke",
-      testMatch: ["**/categories-color-api.spec.ts"],
       use: { baseURL: "http://localhost:8002" },
     },
     {

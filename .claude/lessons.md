@@ -381,6 +381,43 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 
 ---
 
+## 2026-06-11 — futureMe rebuild: spec drift, DB scope, allowlists, migration directory, Neon RLS
+
+**What happened:** The rebuild produced a generic expense tracker (transactions, categories, budget allocation) instead of the 6 agreed screens. Significant time was lost building and then tearing out features that were never in scope.
+**Why:** Development proceeded without cross-checking each feature against the agreed screen map. The agreed spec (6 screens, 5 core tables) was documented in memory but not consulted before each feature was started.
+**Next time:** Before starting any feature, verify it maps to one of the 6 agreed screens: Home (Dashboard), Money Plan, Debts, Emergency Fund, Monthly Review, Opportunities. If it does not, stop and challenge the scope with the user before writing any code.
+**Tags:** process, planning, scope, product
+
+---
+
+**What happened:** Migrations added tables outside the agreed core set (accounts, income_entries, expenses, debts, savings_goals) — including a `category_budgets` table — without explicit user sign-off.
+**Why:** The core table list was agreed but not enforced. Agents added schema to support out-of-scope features without raising a flag.
+**Next time:** Any migration that adds a table not in the set `{accounts, income_entries, expenses, debts, savings_goals}` must be preceded by an explicit question to the user confirming the new table is required. Do not write the migration until the user confirms.
+**Tags:** database, migrations, scope, process
+
+---
+
+**What happened:** New update functions in `database.py` were written without a column allowlist, even though the established pattern (`_ALLOWED_TRANSACTION_UPDATE_FIELDS`) was already present in the file.
+**Why:** The pattern existed but was not applied when new update functions were written. Copying an existing function's structure without also copying its allowlist is the common failure mode.
+**Next time:** Any function in `database.py` that builds a dynamic SQL SET clause must define `_ALLOWED_<RESOURCE>_UPDATE_FIELDS = frozenset({...})` and validate all keys against it before building the clause. Check the existing `_ALLOWED_TRANSACTION_UPDATE_FIELDS` pattern as the reference.
+**Tags:** security, database, sql, backend
+
+---
+
+**What happened:** Migrations were written to the wrong directory (`supabase/migrations/`) rather than the project's actual migration directory (`migrations/migrations/`). The migration files were created but never ran.
+**Why:** The wrong directory was assumed from the Supabase project template. This project's migration path differs.
+**Next time:** The migration directory for this project is `migrations/migrations/`. Always write new `.sql` files there. Do not write to `supabase/migrations/` — it does not exist in this project.
+**Tags:** database, migrations, project-structure, backend
+
+---
+
+**What happened:** RLS policies written using `auth.uid()` (Supabase pattern) were added to Neon-backed tables. Neon uses the `neondb_owner` role with `BYPASSRLS`, so RLS policies are application-layer concerns only — `auth.uid()` does not exist.
+**Why:** The Supabase RLS pattern was applied by habit. Neon has no `auth` schema.
+**Next time:** Do not add `auth.uid()` policies to any table in this project. RLS on Neon is application-layer only — enforce access scoping in the SQL queries (WHERE user_id = $1), not in RLS policies. Add `-- RLS intentionally omitted: Neon uses BYPASSRLS on neondb_owner` as a comment in each migration that enables RLS.
+**Tags:** database, rls, neon, migrations
+
+---
+
 ## 2026-06-11 — Tasks 41-44: renaming an API request field requires a backward-compatibility 422 test
 
 **What happened:** When `RegisterRequest.name` was renamed to `first_name` + `last_name`, a test was added that POSTs the old payload shape (`{ "name": "Alice Smith" }`) and asserts a 422 response. Without this test, a silent regression would go undetected: the old field name could be accepted (e.g. if a validator was accidentally removed) and callers using the old API would receive a 200 instead of a clear error.

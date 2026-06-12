@@ -286,31 +286,6 @@ def test_should_create_valid_company_settings_response_model():
     assert settings.sort_code == "20-30-40"
 
 
-def test_should_create_valid_dashboard_stats_model():
-    """should create a valid DashboardStats model"""
-    # Arrange
-    data = {
-        "total_clients": 25,
-        "total_invoices": 100,
-        "total_revenue": 50000.00,
-        "outstanding_amount": 12000.00,
-        "overdue_count": 3,
-        "paid_this_month": 8000.00,
-        "draft_count": 5,
-        "recent_invoices": [],
-    }
-
-    # Act
-    from models import DashboardStats
-    stats = DashboardStats(**data)
-
-    # Assert
-    assert stats.total_clients == 25
-    assert stats.total_revenue == 50000.00
-    assert stats.overdue_count == 3
-    assert stats.draft_count == 5
-    assert stats.recent_invoices == []
-
 
 def test_should_accept_agreed_rate_in_client_create_model():
     """should accept agreed_rate field in ClientCreate model"""

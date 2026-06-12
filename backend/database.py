@@ -10,6 +10,15 @@ from config import settings
 import bcrypt as _bcrypt
 
 
+# Authorization: only these fields may appear in update payloads.
+# Any field outside these sets indicates a malformed or tampered request.
+_ALLOWED_ACCOUNT_UPDATE_FIELDS = frozenset({"name", "type", "balance", "currency"})
+_ALLOWED_INCOME_UPDATE_FIELDS = frozenset({"source", "amount", "frequency"})
+_ALLOWED_EXPENSE_UPDATE_FIELDS = frozenset({"category", "description", "amount", "date", "is_recurring"})
+_ALLOWED_DEBT_UPDATE_FIELDS = frozenset({"name", "balance", "interest_rate", "minimum_payment", "target_payoff_date"})
+_ALLOWED_SAVINGS_GOAL_UPDATE_FIELDS = frozenset({"name", "target_amount", "current_amount", "deadline"})
+
+
 def hash_password(plain: str) -> str:
     return _bcrypt.hashpw(plain.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
 
@@ -178,77 +187,6 @@ async def upsert_user_settings(user_id: str, settings_data) -> Dict[str, Any]:
 
 
 # ============================================================
-# Dashboard
-# ============================================================
-
-async def get_dashboard_stats(user_id: str, household_id: str = None) -> Dict[str, Any]:
-    if household_id is None:
-        return {
-            "total_budget": 0.0,
-            "total_spent": 0.0,
-            "remaining_budget": 0.0,
-            "savings_rate": 0.0,
-            "category_breakdown": [],
-        }
-
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        settings_row = await conn.fetchrow(
-            "SELECT monthly_budget FROM user_settings WHERE user_id = $1",
-            user_id
-        )
-        total_budget = float(settings_row["monthly_budget"]) if settings_row and settings_row["monthly_budget"] else 0.0
-
-        spent_row = await conn.fetchrow(
-            """SELECT COALESCE(SUM(amount), 0) AS total_spent
-               FROM transactions
-               WHERE household_id = $1
-                 AND type = 'expense'
-                 AND date_trunc('month', date) = date_trunc('month', CURRENT_DATE)""",
-            household_id,
-        )
-        total_spent = float(spent_row["total_spent"]) if spent_row else 0.0
-
-        category_rows = await conn.fetch(
-            """SELECT COALESCE(bc.name, 'Uncategorised') AS category_name,
-                      SUM(t.amount) AS spent,
-                      MAX(cb.monthly_limit) AS budget
-               FROM transactions t
-               LEFT JOIN budget_categories bc ON bc.id = t.category_id
-               LEFT JOIN category_budgets cb
-                      ON cb.category_id = bc.id AND cb.household_id = t.household_id
-               WHERE t.household_id = $1
-                 AND t.type = 'expense'
-                 AND date_trunc('month', t.date) = date_trunc('month', CURRENT_DATE)
-               GROUP BY bc.name
-               ORDER BY spent DESC""",
-            household_id,
-        )
-
-    remaining_budget = max(0.0, total_budget - total_spent)
-    savings_rate = (
-        max(0.0, (total_budget - total_spent) / total_budget * 100)
-        if total_budget > 0
-        else 0.0
-    )
-
-    return {
-        "total_budget": total_budget,
-        "total_spent": total_spent,
-        "remaining_budget": remaining_budget,
-        "savings_rate": savings_rate,
-        "category_breakdown": [
-            {
-                "category_name": r["category_name"],
-                "spent": float(r["spent"]),
-                "budget": float(r["budget"]) if r["budget"] is not None else None,
-            }
-            for r in category_rows
-        ],
-    }
-
-
-# ============================================================
 # Household CRUD
 # ============================================================
 
@@ -331,224 +269,438 @@ async def join_household(user_id: str, household_id: str) -> Dict[str, Any]:
 
 
 # ============================================================
-# Category CRUD
+# Accounts CRUD
 # ============================================================
 
-async def get_categories(household_id: str) -> list:
-    """Return all categories for a household plus default (global) categories."""
+async def get_accounts(household_id: str) -> list:
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT * FROM budget_categories
-               WHERE household_id = $1 OR household_id IS NULL
-               ORDER BY is_default DESC, name ASC""",
+            "SELECT * FROM accounts WHERE household_id = $1 ORDER BY name",
             household_id,
         )
     return [_serialize_row(r) for r in rows]
 
 
-async def create_category(household_id: str, name: str, icon=None, color=None) -> Dict[str, Any]:
-    """Insert a new budget category and return it."""
+async def create_account(household_id: str, data) -> Dict[str, Any]:
+    d = data.model_dump()
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            """INSERT INTO budget_categories (household_id, name, icon, color)
-               VALUES ($1, $2, $3, $4)
+            """INSERT INTO accounts (household_id, name, type, balance, currency)
+               VALUES ($1, $2, $3, $4, $5)
                RETURNING *""",
             household_id,
-            name,
-            icon,
-            color,
+            d["name"],
+            d["type"],
+            d["balance"],
+            d["currency"],
         )
     return _serialize_row(row)
 
 
-# ============================================================
-# Transaction CRUD
-# ============================================================
-
-_TRANSACTION_SELECT = """
-    SELECT t.*,
-           bc.name AS category_name
-    FROM transactions t
-    LEFT JOIN budget_categories bc ON bc.id = t.category_id
-"""
-
-
-async def create_transaction(household_id: str, user_id: str, data) -> Dict[str, Any]:
-    """Insert a new transaction and return it with category name joined."""
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        new_row = await conn.fetchrow(
-            """INSERT INTO transactions
-                   (household_id, user_id, category_id, amount, type, description, date)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)
-               RETURNING id""",
-            household_id,
-            user_id,
-            data.category_id,
-            data.amount,
-            data.type,
-            data.description,
-            data.date,
-        )
-        row = await conn.fetchrow(
-            _TRANSACTION_SELECT + " WHERE t.id = $1",
-            new_row["id"],
-        )
-    return _serialize_row(row)
-
-
-async def get_transactions(household_id: str, month: str = None) -> list:
-    """Return transactions for a household, optionally filtered to a given month (YYYY-MM)."""
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        if month:
-            rows = await conn.fetch(
-                _TRANSACTION_SELECT + """
-                WHERE t.household_id = $1
-                  AND date_trunc('month', t.date) = date_trunc('month', ($2 || '-01')::date)
-                ORDER BY t.date DESC, t.created_at DESC""",
-                household_id,
-                month,
-            )
-        else:
-            rows = await conn.fetch(
-                _TRANSACTION_SELECT + """
-                WHERE t.household_id = $1
-                ORDER BY t.date DESC, t.created_at DESC""",
-                household_id,
-            )
-    return [_serialize_row(r) for r in rows]
-
-
-async def get_transaction(household_id: str, transaction_id: str) -> Optional[Dict[str, Any]]:
-    """Return a single transaction with category join, scoped to the household."""
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            _TRANSACTION_SELECT + " WHERE t.household_id = $1 AND t.id = $2",
-            household_id,
-            transaction_id,
-        )
-    return _serialize_row(row) if row else None
-
-
-_ALLOWED_TRANSACTION_UPDATE_FIELDS = {"amount", "type", "description", "date", "category_id"}
-
-
-async def update_transaction(household_id: str, transaction_id: str, data) -> Optional[Dict[str, Any]]:
-    """Update non-None fields on a transaction and return the updated row."""
-    fields = data.model_dump(exclude_unset=True)
-    if not fields:
-        return await get_transaction(household_id, transaction_id)
-
-    set_clauses = []
-    values = []
-    idx = 1
-    for key, val in fields.items():
-        if key not in _ALLOWED_TRANSACTION_UPDATE_FIELDS:
+async def update_account(account_id: str, household_id: str, data) -> Optional[Dict[str, Any]]:
+    d = data.model_dump(exclude_unset=True)
+    for key in d:
+        if key not in _ALLOWED_ACCOUNT_UPDATE_FIELDS:
             raise ValueError(f"Invalid field: {key}")
-        set_clauses.append(f"{key} = ${idx}")
-        values.append(val)
-        idx += 1
-    set_sql = ", ".join(set_clauses)
+    if not d:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM accounts WHERE id = $1 AND household_id = $2",
+                account_id,
+                household_id,
+            )
+        return _serialize_row(row) if row else None
 
-    values.extend([household_id, transaction_id])
+    set_clauses = ", ".join(f"{k} = ${i + 3}" for i, k in enumerate(d.keys()))
+    values = list(d.values())
     pool = await get_pool()
     async with pool.acquire() as conn:
-        updated = await conn.fetchrow(
-            f"""UPDATE transactions
-                SET {set_sql}, updated_at = NOW()
-                WHERE household_id = ${idx} AND id = ${idx + 1}
-                RETURNING id""",
+        row = await conn.fetchrow(
+            f"UPDATE accounts SET {set_clauses}, updated_at = NOW() WHERE id = $1 AND household_id = $2 RETURNING *",
+            account_id,
+            household_id,
             *values,
         )
-        if not updated:
-            return None
-        row = await conn.fetchrow(
-            _TRANSACTION_SELECT + " WHERE t.id = $1",
-            updated["id"],
-        )
     return _serialize_row(row) if row else None
 
 
-async def delete_transaction(household_id: str, transaction_id: str) -> bool:
-    """Delete a transaction. Returns True if a row was deleted."""
+async def delete_account(account_id: str, household_id: str) -> bool:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        status = await conn.execute(
-            "DELETE FROM transactions WHERE household_id = $1 AND id = $2",
+        result = await conn.execute(
+            "DELETE FROM accounts WHERE id = $1 AND household_id = $2",
+            account_id,
             household_id,
-            transaction_id,
         )
-    return status == "DELETE 1"
+    return result != "DELETE 0"
 
 
 # ============================================================
-# Category Budget CRUD
+# Income CRUD
 # ============================================================
 
-_CATEGORY_BUDGET_SELECT = """
-    SELECT cb.id, cb.household_id, cb.category_id,
-           bc.name AS category_name,
-           cb.monthly_limit, cb.created_at, cb.updated_at
-    FROM category_budgets cb
-    JOIN budget_categories bc ON bc.id = cb.category_id
-"""
-
-
-async def upsert_category_budget(household_id: str, data) -> Dict[str, Any]:
-    """Insert or update a category budget, returning the row with category_name joined."""
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            category = await conn.fetchrow(
-                """SELECT id FROM budget_categories
-                   WHERE id = $1 AND (household_id = $2 OR household_id IS NULL)""",
-                data.category_id,
-                household_id,
-            )
-            if category is None:
-                return None
-            row = await conn.fetchrow(
-                """INSERT INTO category_budgets (household_id, category_id, monthly_limit)
-                   VALUES ($1, $2, $3)
-                   ON CONFLICT (household_id, category_id) DO UPDATE
-                       SET monthly_limit = EXCLUDED.monthly_limit,
-                           updated_at = NOW()
-                   RETURNING id""",
-                household_id,
-                data.category_id,
-                data.monthly_limit,
-            )
-            full_row = await conn.fetchrow(
-                _CATEGORY_BUDGET_SELECT + " WHERE cb.id = $1",
-                row["id"],
-            )
-    if full_row is None:
-        raise RuntimeError("Budget row disappeared after upsert")
-    return _serialize_row(full_row)
-
-
-async def get_category_budgets(household_id: str) -> list:
-    """Return all category budgets for a household with category names joined."""
+async def get_income_entries(household_id: str) -> list:
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            _CATEGORY_BUDGET_SELECT + " WHERE cb.household_id = $1 ORDER BY bc.name ASC",
+            "SELECT * FROM income_entries WHERE household_id = $1 ORDER BY source",
             household_id,
         )
     return [_serialize_row(r) for r in rows]
 
 
-async def delete_category_budget(household_id: str, category_id: str) -> bool:
-    """Delete a category budget. Returns True if a row was deleted."""
+async def create_income_entry(household_id: str, user_id: str, data) -> Dict[str, Any]:
+    d = data.model_dump()
     pool = await get_pool()
     async with pool.acquire() as conn:
-        status = await conn.execute(
-            "DELETE FROM category_budgets WHERE household_id = $1 AND category_id = $2",
+        row = await conn.fetchrow(
+            """INSERT INTO income_entries (household_id, user_id, source, amount, frequency)
+               VALUES ($1, $2, $3, $4, $5)
+               RETURNING *""",
             household_id,
-            category_id,
+            user_id,
+            d["source"],
+            d["amount"],
+            d["frequency"],
         )
-    return status == "DELETE 1"
+    return _serialize_row(row)
+
+
+async def update_income_entry(entry_id: str, household_id: str, data) -> Optional[Dict[str, Any]]:
+    d = data.model_dump(exclude_unset=True)
+    for key in d:
+        if key not in _ALLOWED_INCOME_UPDATE_FIELDS:
+            raise ValueError(f"Invalid field: {key}")
+    if not d:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM income_entries WHERE id = $1 AND household_id = $2",
+                entry_id,
+                household_id,
+            )
+        return _serialize_row(row) if row else None
+
+    set_clauses = ", ".join(f"{k} = ${i + 3}" for i, k in enumerate(d.keys()))
+    values = list(d.values())
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"UPDATE income_entries SET {set_clauses}, updated_at = NOW() WHERE id = $1 AND household_id = $2 RETURNING *",
+            entry_id,
+            household_id,
+            *values,
+        )
+    return _serialize_row(row) if row else None
+
+
+async def delete_income_entry(entry_id: str, household_id: str) -> bool:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM income_entries WHERE id = $1 AND household_id = $2",
+            entry_id,
+            household_id,
+        )
+    return result != "DELETE 0"
+
+
+# ============================================================
+# Expenses CRUD
+# ============================================================
+
+async def get_expenses(household_id: str) -> list:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM expenses WHERE household_id = $1 ORDER BY date DESC",
+            household_id,
+        )
+    return [_serialize_row(r) for r in rows]
+
+
+async def create_expense(household_id: str, user_id: str, data) -> Dict[str, Any]:
+    d = data.model_dump()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO expenses (household_id, user_id, category, description, amount, date, is_recurring)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               RETURNING *""",
+            household_id,
+            user_id,
+            d.get("category"),
+            d.get("description"),
+            d["amount"],
+            d["date"],
+            d.get("is_recurring", False),
+        )
+    return _serialize_row(row)
+
+
+async def update_expense(expense_id: str, household_id: str, data) -> Optional[Dict[str, Any]]:
+    d = data.model_dump(exclude_unset=True)
+    for key in d:
+        if key not in _ALLOWED_EXPENSE_UPDATE_FIELDS:
+            raise ValueError(f"Invalid field: {key}")
+    if not d:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM expenses WHERE id = $1 AND household_id = $2",
+                expense_id,
+                household_id,
+            )
+        return _serialize_row(row) if row else None
+
+    set_clauses = ", ".join(f"{k} = ${i + 3}" for i, k in enumerate(d.keys()))
+    values = list(d.values())
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"UPDATE expenses SET {set_clauses}, updated_at = NOW() WHERE id = $1 AND household_id = $2 RETURNING *",
+            expense_id,
+            household_id,
+            *values,
+        )
+    return _serialize_row(row) if row else None
+
+
+async def delete_expense(expense_id: str, household_id: str) -> bool:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM expenses WHERE id = $1 AND household_id = $2",
+            expense_id,
+            household_id,
+        )
+    return result != "DELETE 0"
+
+
+# ============================================================
+# Debts CRUD
+# ============================================================
+
+async def get_debts(household_id: str) -> list:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM debts WHERE household_id = $1 ORDER BY name",
+            household_id,
+        )
+    return [_serialize_row(r) for r in rows]
+
+
+async def create_debt(household_id: str, user_id: str, data) -> Dict[str, Any]:
+    d = data.model_dump()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO debts (household_id, user_id, name, balance, interest_rate, minimum_payment, target_payoff_date)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               RETURNING *""",
+            household_id,
+            user_id,
+            d["name"],
+            d["balance"],
+            d.get("interest_rate", 0.0),
+            d.get("minimum_payment", 0.0),
+            d.get("target_payoff_date"),
+        )
+    return _serialize_row(row)
+
+
+async def update_debt(debt_id: str, household_id: str, data) -> Optional[Dict[str, Any]]:
+    d = data.model_dump(exclude_unset=True)
+    for key in d:
+        if key not in _ALLOWED_DEBT_UPDATE_FIELDS:
+            raise ValueError(f"Invalid field: {key}")
+    if not d:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM debts WHERE id = $1 AND household_id = $2",
+                debt_id,
+                household_id,
+            )
+        return _serialize_row(row) if row else None
+
+    set_clauses = ", ".join(f"{k} = ${i + 3}" for i, k in enumerate(d.keys()))
+    values = list(d.values())
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"UPDATE debts SET {set_clauses}, updated_at = NOW() WHERE id = $1 AND household_id = $2 RETURNING *",
+            debt_id,
+            household_id,
+            *values,
+        )
+    return _serialize_row(row) if row else None
+
+
+async def delete_debt(debt_id: str, household_id: str) -> bool:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM debts WHERE id = $1 AND household_id = $2",
+            debt_id,
+            household_id,
+        )
+    return result != "DELETE 0"
+
+
+# ============================================================
+# Savings Goals CRUD
+# ============================================================
+
+async def get_savings_goals(household_id: str) -> list:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM savings_goals WHERE household_id = $1 ORDER BY name",
+            household_id,
+        )
+    return [_serialize_row(r) for r in rows]
+
+
+async def create_savings_goal(household_id: str, data) -> Dict[str, Any]:
+    d = data.model_dump()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO savings_goals (household_id, name, target_amount, current_amount, deadline)
+               VALUES ($1, $2, $3, $4, $5)
+               RETURNING *""",
+            household_id,
+            d["name"],
+            d["target_amount"],
+            d.get("current_amount", 0.0),
+            d.get("deadline"),
+        )
+    return _serialize_row(row)
+
+
+async def update_savings_goal(goal_id: str, household_id: str, data) -> Optional[Dict[str, Any]]:
+    d = data.model_dump(exclude_unset=True)
+    for key in d:
+        if key not in _ALLOWED_SAVINGS_GOAL_UPDATE_FIELDS:
+            raise ValueError(f"Invalid field: {key}")
+    if not d:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM savings_goals WHERE id = $1 AND household_id = $2",
+                goal_id,
+                household_id,
+            )
+        return _serialize_row(row) if row else None
+
+    set_clauses = ", ".join(f"{k} = ${i + 3}" for i, k in enumerate(d.keys()))
+    values = list(d.values())
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"UPDATE savings_goals SET {set_clauses}, updated_at = NOW() WHERE id = $1 AND household_id = $2 RETURNING *",
+            goal_id,
+            household_id,
+            *values,
+        )
+    return _serialize_row(row) if row else None
+
+
+async def delete_savings_goal(goal_id: str, household_id: str) -> bool:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM savings_goals WHERE id = $1 AND household_id = $2",
+            goal_id,
+            household_id,
+        )
+    return result != "DELETE 0"
+
+
+# ============================================================
+# Dashboard stats
+# ============================================================
+
+async def get_dashboard_stats(household_id: str) -> dict:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        # Monthly-normalised income
+        income_row = await conn.fetchrow("""
+            SELECT COALESCE(SUM(
+                CASE frequency
+                    WHEN 'monthly' THEN amount
+                    WHEN 'weekly' THEN amount * 52 / 12
+                    WHEN 'annual' THEN amount / 12
+                END
+            ), 0) as total_income
+            FROM income_entries WHERE household_id = $1
+        """, household_id)
+
+        # This month's expenses
+        expense_row = await conn.fetchrow("""
+            SELECT COALESCE(SUM(amount), 0) as total_expenses
+            FROM expenses
+            WHERE household_id = $1
+            AND date_trunc('month', date) = date_trunc('month', CURRENT_DATE)
+        """, household_id)
+
+        # Debt summary
+        debt_row = await conn.fetchrow("""
+            SELECT
+                COALESCE(SUM(balance), 0) as total_owed,
+                COALESCE(SUM(minimum_payment), 0) as total_minimum_payments,
+                COUNT(*) as debt_count
+            FROM debts WHERE household_id = $1
+        """, household_id)
+
+        # Emergency fund (savings_goal named 'Emergency Fund')
+        ef_row = await conn.fetchrow("""
+            SELECT current_amount, target_amount
+            FROM savings_goals
+            WHERE household_id = $1 AND LOWER(name) = 'emergency fund'
+            LIMIT 1
+        """, household_id)
+
+        # All savings goals
+        goals = await conn.fetch("""
+            SELECT name, target_amount, current_amount
+            FROM savings_goals WHERE household_id = $1 ORDER BY name
+        """, household_id)
+
+        total_income = float(income_row["total_income"])
+        total_expenses = float(expense_row["total_expenses"])
+
+        ef_current = float(ef_row["current_amount"]) if ef_row else 0.0
+        ef_target = float(ef_row["target_amount"]) if ef_row else 0.0
+
+        return {
+            "total_income": total_income,
+            "total_expenses": total_expenses,
+            "net_position": total_income - total_expenses,
+            "emergency_fund_status": {
+                "current_amount": ef_current,
+                "target_amount": ef_target,
+                "months_covered": round(ef_current / total_expenses, 1) if total_expenses > 0 else None
+            },
+            "debt_summary": {
+                "total_owed": float(debt_row["total_owed"]),
+                "total_minimum_payments": float(debt_row["total_minimum_payments"]),
+                "debt_count": int(debt_row["debt_count"])
+            },
+            "savings_progress": [
+                {
+                    "goal_name": r["name"],
+                    "target_amount": float(r["target_amount"]),
+                    "current_amount": float(r["current_amount"]),
+                    "percent": round(float(r["current_amount"]) / float(r["target_amount"]) * 100, 1) if float(r["target_amount"]) > 0 else 0.0
+                }
+                for r in goals
+            ]
+        }
+
+

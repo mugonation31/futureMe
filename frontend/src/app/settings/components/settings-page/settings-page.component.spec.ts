@@ -4,7 +4,6 @@ import { of, throwError } from 'rxjs';
 import { SettingsPageComponent } from './settings-page.component';
 import { SettingsService } from '../../services/settings.service';
 import { UserSettings } from '../../models/settings.model';
-import { TransactionService } from '../../../transactions/services/transaction.service';
 
 describe('SettingsPageComponent', () => {
   let component: SettingsPageComponent;
@@ -12,10 +11,6 @@ describe('SettingsPageComponent', () => {
   let mockSettingsService: {
     getSettings: jasmine.Spy;
     updateSettings: jasmine.Spy;
-  };
-  let mockTransactionService: {
-    getCategories: jasmine.Spy;
-    getBudgets: jasmine.Spy;
   };
 
   const mockSettings: UserSettings = {
@@ -32,16 +27,11 @@ describe('SettingsPageComponent', () => {
       getSettings: jasmine.createSpy('getSettings').and.returnValue(of(mockSettings)),
       updateSettings: jasmine.createSpy('updateSettings').and.returnValue(of(mockSettings)),
     };
-    mockTransactionService = {
-      getCategories: jasmine.createSpy('getCategories').and.returnValue(of([])),
-      getBudgets: jasmine.createSpy('getBudgets').and.returnValue(of([])),
-    };
 
     await TestBed.configureTestingModule({
       imports: [SettingsPageComponent, ReactiveFormsModule],
       providers: [
         { provide: SettingsService, useValue: mockSettingsService },
-        { provide: TransactionService, useValue: mockTransactionService },
       ]
     }).compileComponents();
 
@@ -117,7 +107,7 @@ describe('SettingsPageComponent', () => {
     expect(component.errorMessage).toBeTruthy();
   }));
 
-  // Test 7 (Task 28): success message auto-dismisses after 3 seconds
+  // Test 7: success message auto-dismisses after 3 seconds
   it('should auto-dismiss success message after 3 seconds', fakeAsync(() => {
     // Arrange
     component.settingsForm.patchValue({ display_name: 'Test' });
@@ -133,7 +123,7 @@ describe('SettingsPageComponent', () => {
     expect(component.successMessage).toBe('');
   }));
 
-  // Test 8 (Task 28): updateSettings should not include null fields
+  // Test 8: updateSettings should not include null fields
   it('should filter out null values before calling updateSettings', () => {
     // Arrange: only display_name is filled; monthly_budget is null
     component.settingsForm.setValue({ display_name: 'Carol', currency: 'GBP', monthly_budget: null });
@@ -144,16 +134,5 @@ describe('SettingsPageComponent', () => {
     // Assert: the payload passed to updateSettings should not have monthly_budget key (or have it as undefined)
     const callArg = mockSettingsService.updateSettings.calls.mostRecent().args[0];
     expect(callArg).not.toEqual(jasmine.objectContaining({ monthly_budget: null }));
-  });
-
-  // Test 9 (Task 33): budget allocation panel is rendered below the existing form
-  it('should render the budget-allocation panel below the settings form', () => {
-    // Arrange + Act — fixture is already detected
-    fixture.detectChanges();
-    const el: HTMLElement = fixture.nativeElement;
-
-    // Assert
-    const budgetPanel = el.querySelector('app-budget-allocation');
-    expect(budgetPanel).toBeTruthy();
   });
 });

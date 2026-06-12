@@ -10,8 +10,12 @@
 
     <div class="nav-menu" [class.open]="menuOpen">
       <div class="nav-links">
-        <a routerLink="/dashboard" routerLinkActive="active" (click)="closeMenu()">Dashboard</a>
-        <a routerLink="/transactions" routerLinkActive="active" (click)="closeMenu()">Transactions</a>
+        <a routerLink="/dashboard" routerLinkActive="active" (click)="closeMenu()">Home</a>
+        <a routerLink="/money-plan" routerLinkActive="active" (click)="closeMenu()">Money Plan</a>
+        <a routerLink="/debts" routerLinkActive="active" (click)="closeMenu()">Debts</a>
+        <a routerLink="/emergency-fund" routerLinkActive="active" (click)="closeMenu()">Emergency Fund</a>
+        <a routerLink="/monthly-review" routerLinkActive="active" (click)="closeMenu()">Monthly Review</a>
+        <a routerLink="/opportunities" routerLinkActive="active" (click)="closeMenu()">Opportunities</a>
         <a routerLink="/settings" routerLinkActive="active" (click)="closeMenu()">Settings</a>
       </div>
       <div class="nav-user">

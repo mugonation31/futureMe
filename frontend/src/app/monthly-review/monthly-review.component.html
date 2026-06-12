@@ -1,0 +1,39 @@
+<div class="page">
+  <div class="page-header">
+    <h1>Monthly Review</h1>
+    <input type="month" [value]="selectedMonth" (change)="onMonthChange($any($event.target).value)" class="month-picker" />
+  </div>
+
+  <div class="cards-grid">
+    <!-- Total Income -->
+    <div class="card">
+      <p class="label">Income</p>
+      <h2 class="amount positive">{{ totalIncome | currency:'GBP':'symbol':'1.0-0' }}</h2>
+    </div>
+
+    <!-- Total Expenses -->
+    <div class="card">
+      <p class="label">Expenses</p>
+      <h2 class="amount">{{ totalExpenses | currency:'GBP':'symbol':'1.0-0' }}</h2>
+    </div>
+
+    <!-- Net Savings -->
+    <div class="card" [ngClass]="isOnTrack ? 'on-track' : 'over-budget'">
+      <p class="label">Net Savings</p>
+      <h2 class="amount" [class.positive]="isOnTrack" [class.caution]="!isOnTrack">
+        {{ netSavings | currency:'GBP':'symbol':'1.0-0' }}
+      </h2>
+      <p class="verdict">{{ isOnTrack ? 'On track' : 'Over budget' }}</p>
+    </div>
+  </div>
+
+  <!-- Expense breakdown -->
+  <div class="card breakdown">
+    <h3>Expenses this month</h3>
+    <div *ngFor="let expense of filteredExpenses" class="expense-row">
+      <span class="expense-desc">{{ expense.description || expense.category || 'Uncategorised' }}</span>
+      <span class="expense-amount">{{ expense.amount | currency:'GBP':'symbol':'1.2-2' }}</span>
+    </div>
+    <p *ngIf="!filteredExpenses.length" class="empty-state">No expenses recorded for this month</p>
+  </div>
+</div>

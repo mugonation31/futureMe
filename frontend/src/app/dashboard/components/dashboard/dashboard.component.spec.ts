@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { RouterTestingModule } from '@angular/router/testing';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
-import { of } from 'rxjs';
+import { of, throwError, Subject } from 'rxjs';
 import { DashboardComponent } from './dashboard.component';
 import { DashboardService, DashboardStats } from '../../services/dashboard.service';
 import { SettingsService } from '../../../settings/services/settings.service';
@@ -13,27 +13,17 @@ describe('DashboardComponent', () => {
   let mockSettingsService: { getSettings: jasmine.Spy };
 
   const mockStats: DashboardStats = {
-    total_budget: 5000,
-    total_spent: 1200,
-    remaining_budget: 3800,
-    savings_rate: 24,
-    category_breakdown: [
-      { category_name: 'Groceries', spent: 800, budget: 1000 },
-      { category_name: 'Transport', spent: 400, budget: null },
-    ],
+    total_income: 3000,
+    total_expenses: 1200,
+    net_position: 1800,
+    emergency_fund_status: { current_amount: 500, target_amount: 3600, months_covered: 0.42 },
+    debt_summary: { total_owed: 5000, total_minimum_payments: 150, debt_count: 1 },
+    savings_progress: [{ goal_name: 'Holiday', target_amount: 2000, current_amount: 500, percent: 25 }],
   };
 
-  const zeroStats: DashboardStats = {
-    total_budget: 0,
-    total_spent: 0,
-    remaining_budget: 0,
-    savings_rate: 0,
-    category_breakdown: [],
-  };
-
-  function createComponent(stats: DashboardStats) {
+  beforeEach(async () => {
     mockDashboardService = {
-      getStats: jasmine.createSpy('getStats').and.returnValue(of(stats)),
+      getStats: jasmine.createSpy('getStats').and.returnValue(of(mockStats)),
     };
     mockSettingsService = {
       getSettings: jasmine.createSpy('getSettings').and.returnValue(
@@ -41,209 +31,122 @@ describe('DashboardComponent', () => {
       ),
     };
 
-    TestBed.resetTestingModule();
-    TestBed.configureTestingModule({
+    await TestBed.configureTestingModule({
       imports: [DashboardComponent, RouterTestingModule, HttpClientTestingModule],
       providers: [
         { provide: DashboardService, useValue: mockDashboardService },
         { provide: SettingsService, useValue: mockSettingsService },
       ],
-    });
-  }
+    }).compileComponents();
 
-  beforeEach(async () => {
-    await createComponent(mockStats);
-    await TestBed.compileComponents();
     fixture = TestBed.createComponent(DashboardComponent);
     component = fixture.componentInstance;
   });
 
-  // Test 1: component creation
   it('should create', () => {
     expect(component).toBeTruthy();
   });
 
-  // Test 2: loads stats on init
   it('should call getStats() on ngOnInit', () => {
     fixture.detectChanges();
     expect(mockDashboardService.getStats).toHaveBeenCalled();
   });
 
-  // Test 3: renders the four stat cards
-  it('should render stat cards when stats are loaded', () => {
+  it('should set stats after successful load', () => {
     fixture.detectChanges();
-    const statCards = fixture.nativeElement.querySelectorAll('[data-testid="stat-card"]');
-    expect(statCards.length).toBe(4);
+    expect(component.stats).toEqual(mockStats);
+    expect(component.loading).toBeFalse();
   });
 
-  // Test 4: renders category breakdown rows
-  it('should render one row per category in category_breakdown', () => {
-    fixture.detectChanges();
-    const rows = fixture.nativeElement.querySelectorAll('[data-testid="category-row"]');
-    expect(rows.length).toBe(2);
+  // Test 1: should display loading state initially
+  it('should display loading state initially', () => {
+    // Use a Subject so the observable does not emit synchronously,
+    // allowing us to capture the in-flight loading state.
+    const statsSubject = new Subject<DashboardStats>();
+    mockDashboardService.getStats.and.returnValue(statsSubject.asObservable());
+    fixture.detectChanges(); // triggers ngOnInit → loading = true, no response yet
+    const loadingEl = fixture.nativeElement.querySelector('.loading');
+    expect(loadingEl).toBeTruthy();
+    expect(loadingEl.textContent).toContain('Loading');
+    statsSubject.complete(); // clean up
   });
 
-  // Test 5: shows category name in breakdown row
-  it('should show category names in the breakdown section', () => {
+  // Test 2: should display net position after data loads
+  it('should display net position after data loads', () => {
     fixture.detectChanges();
-    const text: string = fixture.nativeElement.textContent;
-    expect(text).toContain('Groceries');
-    expect(text).toContain('Transport');
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.textContent).toContain('1,800');
   });
 
-  // Test 6: shows zero-budget CTA card when total_budget is 0
-  it('should show a zero-budget CTA linking to /settings when total_budget is 0', async () => {
-    await createComponent(zeroStats);
-    await TestBed.compileComponents();
-    fixture = TestBed.createComponent(DashboardComponent);
-    component = fixture.componentInstance;
+  // Test 3: should apply 'positive' CSS class when net_position >= 0
+  it("should apply 'positive' CSS class when net_position >= 0", () => {
     fixture.detectChanges();
-
-    const cta = fixture.nativeElement.querySelector('[data-testid="zero-budget-cta"]');
-    expect(cta).not.toBeNull();
+    expect(component.netPositionClass).toBe('positive');
+    const netCard = fixture.nativeElement.querySelector('.positive');
+    expect(netCard).toBeTruthy();
   });
 
-  // Test 7: shows empty-state card when category_breakdown is empty but budget is set
-  it('should show an empty-state card linking to /transactions when category_breakdown is empty', async () => {
-    const noTransactionStats: DashboardStats = {
-      ...zeroStats,
-      total_budget: 3000,
-      remaining_budget: 3000,
-    };
-    await createComponent(noTransactionStats);
-    await TestBed.compileComponents();
-    fixture = TestBed.createComponent(DashboardComponent);
-    component = fixture.componentInstance;
+  // Test 4: should apply 'caution' CSS class when net_position < 0
+  it("should apply 'caution' CSS class when net_position < 0", () => {
+    const negativeStats: DashboardStats = { ...mockStats, net_position: -200 };
+    mockDashboardService.getStats.and.returnValue(of(negativeStats));
     fixture.detectChanges();
-
-    const emptyState = fixture.nativeElement.querySelector('[data-testid="category-empty-state"]');
-    expect(emptyState).not.toBeNull();
+    expect(component.netPositionClass).toBe('caution');
+    const cautionCard = fixture.nativeElement.querySelector('.caution');
+    expect(cautionCard).toBeTruthy();
   });
 
-  // Test 9: shows budget limit via appCurrency when budget is non-null
-  it('should display budget limit using appCurrency pipe when budget is non-null', () => {
+  // Test 5: should display debt summary total_owed
+  it('should display debt summary total_owed', () => {
     fixture.detectChanges();
-    // Groceries row has budget: 1000, should show £1,000.00
-    const rows = fixture.nativeElement.querySelectorAll('[data-testid="category-row"]');
-    const groceriesRow: HTMLElement = rows[0];
-    expect(groceriesRow.textContent).toContain('£1,000.00');
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.textContent).toContain('5,000');
   });
 
-  // Test 10: shows "No limit" when budget is null
-  it('should display "No limit" when category budget is null', () => {
+  // Test 6: should display emergency fund progress bar at correct width
+  it('should display emergency fund progress bar at correct width', () => {
     fixture.detectChanges();
-    // Transport row has budget: null
-    const rows = fixture.nativeElement.querySelectorAll('[data-testid="category-row"]');
-    const transportRow: HTMLElement = rows[1];
-    expect(transportRow.textContent).toContain('No limit');
+    // 500 / 3600 = 13.89%
+    const expectedPercent = Math.min((500 / 3600) * 100, 100);
+    expect(component.emergencyFundPercent).toBeCloseTo(expectedPercent, 1);
+    const progressFill = fixture.nativeElement.querySelector('.progress-fill');
+    expect(progressFill).toBeTruthy();
   });
 
-  // Test 11: progress bar width reflects spent/budget ratio
-  it('should set progress bar fill width to (spent/budget)*100% when budget is non-null', () => {
+  // Test 7: should display savings goals list
+  it('should display savings goals list', () => {
     fixture.detectChanges();
-    // Groceries: spent=800, budget=1000 → 80%
-    const rows = fixture.nativeElement.querySelectorAll('[data-testid="category-row"]');
-    const fill = rows[0].querySelector('[data-testid="category-progress-fill"]') as HTMLElement;
-    expect(fill).not.toBeNull();
-    expect(fill.style.width).toBe('80%');
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.textContent).toContain('Holiday');
   });
 
-  // Test 12: progress bar capped at 100%
-  it('should cap progress bar fill at 100% when spent exceeds budget', async () => {
-    const overspentCategoryStats: DashboardStats = {
-      total_budget: 5000,
-      total_spent: 1500,
-      remaining_budget: 3500,
-      savings_rate: 0,
-      category_breakdown: [{ category_name: 'Groceries', spent: 1500, budget: 1000 }],
-    };
-    await createComponent(overspentCategoryStats);
-    await TestBed.compileComponents();
-    fixture = TestBed.createComponent(DashboardComponent);
-    component = fixture.componentInstance;
+  // Test 8: should show empty state when no savings goals
+  it('should show empty state when no savings goals', () => {
+    const emptyStats: DashboardStats = { ...mockStats, savings_progress: [] };
+    mockDashboardService.getStats.and.returnValue(of(emptyStats));
     fixture.detectChanges();
-
-    const fill = fixture.nativeElement.querySelector('[data-testid="category-progress-fill"]') as HTMLElement;
-    expect(fill.style.width).toBe('100%');
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.textContent).toContain('No savings goals');
   });
 
-  // Test 13: progress bar uses over-budget class when spent >= 90% of budget
-  it('should NOT apply over-budget class when spent is < 90% of budget', () => {
+  // Test 9: should display error message when service fails
+  it('should display error message when service fails', () => {
+    mockDashboardService.getStats.and.returnValue(throwError(() => ({ status: 500 })));
     fixture.detectChanges();
-    // Groceries: spent=800, budget=1000 → 80% — NOT at limit
-    const rows = fixture.nativeElement.querySelectorAll('[data-testid="category-row"]');
-    const fillUnder = rows[0].querySelector('[data-testid="category-progress-fill"]') as HTMLElement;
-    expect(fillUnder.classList.contains('over-budget')).toBeFalse();
+    const errorEl = fixture.nativeElement.querySelector('.error-text');
+    expect(errorEl).toBeTruthy();
+    expect(errorEl.textContent).toContain('Failed to load dashboard');
   });
 
-  it('should apply over-budget class when spent is exactly 90% of budget', async () => {
-    const cautionStats: DashboardStats = {
-      total_budget: 5000,
-      total_spent: 900,
-      remaining_budget: 4100,
-      savings_rate: 0,
-      category_breakdown: [{ category_name: 'Groceries', spent: 900, budget: 1000 }],
-    };
-    await createComponent(cautionStats);
-    await TestBed.compileComponents();
-    fixture = TestBed.createComponent(DashboardComponent);
-    component = fixture.componentInstance;
+  // Test 10: should show quick links to all 5 screens
+  it('should show quick links to all 5 screens', () => {
     fixture.detectChanges();
-
-    const fill = fixture.nativeElement.querySelector('[data-testid="category-progress-fill"]') as HTMLElement;
-    expect(fill.classList.contains('over-budget')).toBeTrue();
-  });
-
-  // Test 14: plain bar segment when budget is null (progress bar still shown but no percentage calc)
-  it('should render a progress bar track when category budget is null', () => {
-    fixture.detectChanges();
-    // Transport row has budget: null
-    const rows = fixture.nativeElement.querySelectorAll('[data-testid="category-row"]');
-    const transportRow: HTMLElement = rows[1];
-    const track = transportRow.querySelector('[data-testid="category-progress-track"]');
-    expect(track).not.toBeNull();
-  });
-
-  // Test 15: empty-state card when category_breakdown is empty (even with zero budget — no budget set)
-  it('should show empty-state card linking to /transactions when category_breakdown is empty', async () => {
-    await createComponent(zeroStats);
-    await TestBed.compileComponents();
-    fixture = TestBed.createComponent(DashboardComponent);
-    component = fixture.componentInstance;
-    fixture.detectChanges();
-
-    const emptyState = fixture.nativeElement.querySelector('[data-testid="category-empty-state"]');
-    expect(emptyState).not.toBeNull();
-    const link = emptyState?.querySelector('a[routerLink]') as HTMLAnchorElement | null;
-    expect(link).not.toBeNull();
-  });
-
-  // Test 16: renders without errors when stats has empty breakdown (household_id null scenario)
-  it('should render without errors when category_breakdown is empty (household_id null / zeroed stats)', async () => {
-    await createComponent(zeroStats);
-    await TestBed.compileComponents();
-    fixture = TestBed.createComponent(DashboardComponent);
-    component = fixture.componentInstance;
-    expect(() => fixture.detectChanges()).not.toThrow();
-    expect(component).toBeTruthy();
-  });
-
-  // Test 8: remaining_budget shown as non-negative
-  it('should not show negative remaining_budget (floors at 0)', async () => {
-    const overspentStats: DashboardStats = {
-      total_budget: 1000,
-      total_spent: 1500,
-      remaining_budget: 0,
-      savings_rate: 0,
-      category_breakdown: [{ category_name: 'Groceries', spent: 1500, budget: null }],
-    };
-    await createComponent(overspentStats);
-    await TestBed.compileComponents();
-    fixture = TestBed.createComponent(DashboardComponent);
-    component = fixture.componentInstance;
-    fixture.detectChanges();
-
-    const remaining = fixture.nativeElement.querySelector('[data-testid="stat-remaining"]');
-    expect(remaining?.textContent).not.toContain('-');
+    const links: NodeListOf<HTMLAnchorElement> = fixture.nativeElement.querySelectorAll('a[href]');
+    const hrefs = Array.from(links).map((l) => l.getAttribute('href'));
+    expect(hrefs).toContain('/money-plan');
+    expect(hrefs).toContain('/debts');
+    expect(hrefs).toContain('/emergency-fund');
+    expect(hrefs).toContain('/monthly-review');
+    expect(hrefs).toContain('/opportunities');
   });
 });

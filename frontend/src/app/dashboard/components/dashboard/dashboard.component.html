@@ -1,80 +1,64 @@
-<div class="dashboard-container">
-  <div class="header">
-    <h1>Dashboard</h1>
-  </div>
-
-  <div *ngIf="loading" class="loading">
-    Loading dashboard...
-  </div>
-
-  <div *ngIf="error" class="error-message">
-    {{ error }}
-  </div>
-
-  <div *ngIf="!loading && stats" class="dashboard-content">
-    <!-- Zero-budget CTA -->
-    <div *ngIf="stats.total_budget === 0" data-testid="zero-budget-cta" class="cta-card">
-      <p>You have not set a monthly budget yet.</p>
-      <a routerLink="/settings" class="btn-primary">Set your budget in Settings</a>
+<div class="dashboard-page">
+  <div class="dashboard-container">
+    <div class="header">
+      <h1>Dashboard</h1>
     </div>
 
-    <!-- Stat cards -->
-    <div class="stats-grid">
-      <div class="stat-card" data-testid="stat-card">
-        <span class="stat-value">{{ stats.total_budget | appCurrency }}</span>
-        <span class="stat-label">Monthly Budget</span>
-      </div>
-      <div class="stat-card" data-testid="stat-card">
-        <span class="stat-value">{{ stats.total_spent | appCurrency }}</span>
-        <span class="stat-label">Spent</span>
-      </div>
-      <div class="stat-card" data-testid="stat-card">
-        <span class="stat-value" data-testid="stat-remaining">{{ remaining | appCurrency }}</span>
-        <span class="stat-label">Remaining</span>
-      </div>
-      <div class="stat-card" data-testid="stat-card">
-        <span class="stat-value">{{ stats.savings_rate | number:'1.0-1' }}%</span>
-        <span class="stat-label">Savings Rate</span>
-      </div>
-    </div>
+    <div *ngIf="loading" class="loading">Loading...</div>
 
-    <!-- Category breakdown -->
-    <div class="breakdown-section">
-      <h2>Spending by Category</h2>
+    <div *ngIf="error" class="error-text">{{ error }}</div>
 
-      <!-- Empty state — no categories with transactions this month -->
-      <div *ngIf="stats.category_breakdown.length === 0"
-           data-testid="category-empty-state"
-           class="cta-card">
-        <p>No transactions this month.</p>
-        <a routerLink="/transactions" class="btn-primary">Add your first transaction</a>
+    <div *ngIf="!loading && !error && stats">
+
+      <!-- Net Position Card -->
+      <div class="card" [ngClass]="netPositionClass">
+        <p class="label">Net Position</p>
+        <p class="amount">{{ stats.net_position | currency:currency:'symbol':'1.0-0' }}</p>
       </div>
 
-      <div *ngFor="let row of stats.category_breakdown"
-           data-testid="category-row"
-           class="category-row">
-        <span class="category-name">{{ row.category_name }}</span>
-        <span class="category-spent">{{ row.spent | appCurrency }}</span>
-        <div class="progress-bar-track" data-testid="category-progress-track">
-          <div class="progress-bar-fill"
-               data-testid="category-progress-fill"
-               [style.width.%]="getCategoryBarWidth(row.spent, row.budget)"
-               [class.over-budget]="isCategoryAtLimit(row.spent, row.budget)">
+      <!-- Debt Summary Card -->
+      <div class="card">
+        <p class="label">Total Debt</p>
+        <p class="amount">{{ stats.debt_summary.total_owed | currency:currency:'symbol':'1.0-0' }}</p>
+        <a routerLink="/debts" class="card-link">View debts</a>
+      </div>
+
+      <!-- Emergency Fund Card -->
+      <div class="card">
+        <p class="label">Emergency Fund</p>
+        <p class="amount">
+          {{ stats.emergency_fund_status.current_amount | currency:currency:'symbol':'1.0-0' }}
+          of
+          {{ stats.emergency_fund_status.target_amount | currency:currency:'symbol':'1.0-0' }}
+        </p>
+        <div class="progress-bar">
+          <div class="progress-fill" [style.width.%]="emergencyFundPercent"></div>
+        </div>
+        <a routerLink="/emergency-fund" class="card-link">View emergency fund</a>
+      </div>
+
+      <!-- Savings Goals Card -->
+      <div class="card">
+        <p class="label">Savings Goals</p>
+        <div *ngIf="stats.savings_progress.length > 0">
+          <div *ngFor="let goal of stats.savings_progress" class="goal-item">
+            <span class="goal-name">{{ goal.goal_name }}</span>
+            <span class="goal-percent">{{ goal.percent | number:'1.0-0' }}%</span>
           </div>
         </div>
-        <span class="category-budget">
-          <ng-container *ngIf="row.budget !== null; else noLimit">{{ row.budget | appCurrency }}</ng-container>
-          <ng-template #noLimit>No limit</ng-template>
-        </span>
+        <p *ngIf="stats.savings_progress.length === 0" class="empty-state">No savings goals yet.</p>
+        <a routerLink="/emergency-fund" class="card-link">View savings goals</a>
       </div>
-    </div>
 
-    <div class="quick-actions">
-      <h2>Quick Actions</h2>
-      <div class="actions-grid">
-        <a routerLink="/settings" class="action-btn action-settings">Settings</a>
-        <a routerLink="/transactions" class="action-btn">Transactions</a>
-      </div>
+      <!-- Quick Links -->
+      <nav class="quick-links">
+        <a routerLink="/money-plan" class="quick-link">Money Plan</a>
+        <a routerLink="/debts" class="quick-link">Debts</a>
+        <a routerLink="/emergency-fund" class="quick-link">Emergency Fund</a>
+        <a routerLink="/monthly-review" class="quick-link">Monthly Review</a>
+        <a routerLink="/opportunities" class="quick-link">Opportunities</a>
+      </nav>
+
     </div>
   </div>
 </div>

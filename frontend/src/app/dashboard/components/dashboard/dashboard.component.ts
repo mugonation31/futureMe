@@ -1,24 +1,46 @@
 import { Component, OnInit, inject } from '@angular/core';
-import { CommonModule, DecimalPipe } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { CommonModule, CurrencyPipe, DecimalPipe, NgClass, NgFor, NgIf } from '@angular/common';
+import { RouterLink, RouterModule } from '@angular/router';
 import { DashboardService, DashboardStats } from '../../services/dashboard.service';
-import { CurrencyFormatPipe } from '../../../core/pipes/currency-format.pipe';
+import { SettingsService } from '../../../settings/services/settings.service';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, DecimalPipe, RouterLink, CurrencyFormatPipe],
+  imports: [CommonModule, RouterModule, RouterLink, CurrencyPipe, NgClass, NgIf, NgFor, DecimalPipe],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.scss'
 })
 export class DashboardComponent implements OnInit {
   private dashboardService = inject(DashboardService);
+  private settingsService = inject(SettingsService);
 
   stats: DashboardStats | null = null;
   loading = false;
   error: string | null = null;
+  currency = 'GBP';
+
+  get netPositionClass(): 'positive' | 'caution' {
+    if (!this.stats) return 'positive';
+    return this.stats.net_position >= 0 ? 'positive' : 'caution';
+  }
+
+  get emergencyFundPercent(): number {
+    if (!this.stats?.emergency_fund_status) return 0;
+    const { current_amount, target_amount } = this.stats.emergency_fund_status;
+    if (!target_amount) return 0;
+    return Math.min((current_amount / target_amount) * 100, 100);
+  }
 
   ngOnInit() {
+    this.settingsService.getSettings().subscribe({
+      next: (settings) => {
+        this.currency = settings.currency ?? 'GBP';
+      },
+      error: () => {
+        this.currency = 'GBP';
+      }
+    });
     this.loadStats();
   }
 
@@ -38,25 +60,4 @@ export class DashboardComponent implements OnInit {
       }
     });
   }
-
-  get remaining(): number {
-    if (!this.stats) return 0;
-    return Math.max(0, this.stats.remaining_budget);
-  }
-
-  getBarWidth(spent: number): number {
-    if (!this.stats || this.stats.total_budget === 0) return 0;
-    return Math.min(100, (spent / this.stats.total_budget) * 100);
-  }
-
-  getCategoryBarWidth(spent: number, budget: number | null): number {
-    if (budget === null || budget === 0) return 0;
-    return Math.min(100, Math.max(0, (spent / budget) * 100));
-  }
-
-  isCategoryAtLimit(spent: number, budget: number | null): boolean {
-    if (budget === null || budget === 0) return false;
-    return (spent / budget) >= 0.9;
-  }
-
 }
