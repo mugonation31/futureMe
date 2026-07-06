@@ -418,6 +418,103 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 
 ---
 
+## 2026-06-16 — get_monthly_expenses helper: SQL OR branch testing, model/DB sync, CSP, f-string injection, falsy or-chain, stale Docker
+
+**What happened:** A test for a helper that sums `is_recurring=true` expenses + current-month non-recurring expenses only asserted the recurring branch. Removing the `OR` clause for the non-recurring branch still passed all tests — the test was vacuous for half the logic.
+**Why:** When a SQL query has `WHERE (condition_A OR condition_B)`, a test that seeds only condition_A rows never exercises condition_B. The assertion passes regardless of whether condition_B exists.
+**Next time:** For every SQL `OR` condition, write at least one test that asserts the result changes when data satisfies only each branch independently. Seed one row per branch, verify both contribute to the result, then remove each and verify the count drops.
+**Tags:** testing, sql, database, assertions
+
+---
+
+**What happened:** A field was removed from the DB insert in `database.py` but left on the Pydantic model. Callers passed the field, it was silently discarded (never written to the DB), and no error was raised by either Pydantic or asyncpg.
+**Why:** asyncpg only errors on unrecognised positional parameters — extra dict keys that are never referenced in the SQL string are ignored without complaint. Pydantic accepts the field because it is still declared on the model.
+**Next time:** Whenever a column is removed from a DB insert, immediately check whether it is still declared on the Pydantic request model. If it is, remove it (or mark it explicitly optional with a deprecation note). A field on the model that is never persisted is silent misinformation to every caller.
+**Tags:** database, pydantic, backend, data-integrity
+
+---
+
+**What happened:** `unsafe-inline` was present in the Content-Security-Policy `script-src` directive. Angular 17 with the Ivy compiler never requires `unsafe-inline` for its own scripts — all Angular-generated code uses nonces or hashes internally in production builds.
+**Why:** `unsafe-inline` is often added during debugging to silence CSP errors and then left in production configs. Angular developers sometimes copy CSP headers from older AngularJS or webpack configurations where it was genuinely needed.
+**Next time:** On this project, `script-src` must never contain `unsafe-inline`. If a CSP error appears on Angular 17+ assets, fix it by adding the asset's hash or nonce — not by loosening to `unsafe-inline`. Audit `nginx.conf` for `unsafe-inline` any time the CSP header is modified.
+**Tags:** security, csp, angular, frontend
+
+---
+
+**What happened:** Five `update_*` functions in `database.py` built their SQL SET clauses using f-string interpolation of column names derived from user-supplied input (`f"{key} = ${i}"`). The fix was `safe_keys = [k for k in _ALLOWED_<RESOURCE>_UPDATE_FIELDS if k in d]` before the loop.
+**Why:** Even though keys come from Pydantic model dicts (not raw user input), the pattern is structurally identical to SQL column injection. A schema drift, accidental field rename, or Pydantic computed field could introduce an attacker-controlled column name.
+**Next time:** Add `bandit -r backend/ -ll` to CI (or as a pre-commit hook). Rule B608 flags f-string interpolation in SQL statements and would have caught all 5 functions on first commit. Combine with the allowlist pattern: derive safe keys from `_ALLOWED_<RESOURCE>_UPDATE_FIELDS` before the loop, never from the raw input dict.
+**Tags:** security, sql, database, ci
+
+---
+
+**What happened:** A default-value chain `d.get("x") or d.get("y", "default")` silently swallowed empty strings. If `d.get("x")` returned `""`, the `or` evaluated it as falsy and fell through to the fallback — overwriting a legitimate empty-string value with the default.
+**Why:** Python's `or` short-circuits on truthiness, not on `None` / presence. An empty string is falsy, so `"" or fallback` always returns `fallback`. This is the expected Python behaviour but is wrong for "use the supplied value if the key is present."
+**Next time:** Use `d.get("x") if d.get("x") is not None else d.get("y", "default")` — or better, `d["x"] if "x" in d else d.get("y", "default")`. Never use `or` chaining to pick between dict values when empty string is a valid state.
+**Tags:** python, backend, data-integrity, defaults
+
+---
+
+**What happened:** E2E tests ran against a stale Docker container after backend changes were made. The tests correctly failed, confirming they detect the pre-fix behaviour — but the failure was initially misread as a test problem rather than a container-staleness issue.
+**Why:** Docker images cache the application layer. Backend changes made outside the container are not reflected until `docker-compose up --build` is re-run. The running container is the previous code.
+**Next time:** After any backend change (Python files, `requirements.txt`, migrations), always run `docker-compose up --build` before running E2E tests against the Dockerised stack. A failing E2E test after a backend change should first prompt "is the container rebuilt?" before investigating the test logic.
+**Tags:** e2e, docker, testing, process
+
+---
+
+## 2026-06-17 — DB migration for financial conformance (debt_payments, debts, savings_goals)
+
+**What happened:** A migration with multiple ALTER TABLE statements was written without a transaction. A failure partway through would have left the schema in an inconsistent state with no clean rollback path. BEGIN/COMMIT was added after code review caught the omission.
+**Why:** Multi-step migrations feel lightweight compared to CREATE TABLE migrations, so the transaction wrapper is easy to skip. Any migration with more than one DDL statement must be atomic.
+**Next time:** Every migration that contains more than one DDL statement (ALTER TABLE, ADD CONSTRAINT, CREATE INDEX, etc.) must be wrapped in `BEGIN; ... COMMIT;`. Treat the absence of a transaction as a required checklist failure, not a style preference. Single-statement migrations are the only acceptable exception.
+**Tags:** database, migrations, transactions, process
+
+---
+
+**What happened:** `debt_payments` was built without a `user_id` foreign key, even though the acceptance criteria explicitly listed it. The test list was derived from structural SQL patterns (table shape, FK to debts, timestamp columns) — not from reading the full AC. The omission was caught in code review, not by TDD.
+**Why:** When writing a test list for a new table, it is natural to enumerate structural properties visible in the schema design. Cross-cutting fields like `user_id` (present on every other user-data table in the project) can be missed if the test list is generated from "what does this table look like?" rather than "what does the AC say this table must have?"
+**Next time:** Before writing the TDD test list for any new migration or DB function, read the acceptance criteria line by line and map every requirement to at least one test. Do not generate the test list from schema structure alone — the AC is the source of truth, the schema is the implementation. A test list that does not trace back to the full AC will miss requirements the AC contained.
+**Tags:** testing, tdd, migrations, process
+
+---
+
+**What happened:** `ENABLE ROW LEVEL SECURITY` was added to `debt_payments` with no policies. On Neon, the `neondb_owner` role has `BYPASSRLS`, so enabling RLS with no policies has zero effect — all access is still permitted. A RESTRICTIVE `USING (false)` policy was added for defence-in-depth so that any connection without BYPASSRLS is denied by default.
+**Why:** `ENABLE ROW LEVEL SECURITY` looks like it activates protection. In Postgres, a table with RLS enabled but no policies allows all access (for roles with BYPASSRLS, trivially; for roles without BYPASSRLS, because there are no policies to match). The statement is not protective on its own.
+**Next time:** On this project, the RLS pattern for new tables is: (1) `ALTER TABLE t ENABLE ROW LEVEL SECURITY;` (2) `CREATE POLICY t_deny_all ON t AS RESTRICTIVE USING (false);` — this ensures any connection without BYPASSRLS is denied by default, providing defence-in-depth even though `neondb_owner` bypasses it. Document the rationale in a comment. Never leave RLS enabled with no policies — it provides no protection and creates a false sense of security.
+**Tags:** database, rls, security, neon
+
+---
+
+**What happened:** Attempting to remove `style-src 'unsafe-inline'` from the Content-Security-Policy header in nginx.conf broke all Angular 17 component styles. Angular 17 with `ViewEncapsulation.Emulated` (the default) injects component styles as `<style>` tags at runtime — these are blocked by CSP unless `'unsafe-inline'` is present in `style-src`.
+**Why:** `'unsafe-inline'` for `script-src` is genuinely removable in Angular 17 Ivy production builds (scripts use nonces). `style-src` is a different directive — runtime style injection is a core mechanism of Angular's emulated encapsulation, not a legacy pattern, and it requires `'unsafe-inline'`.
+**Next time:** On this project, `style-src 'unsafe-inline'` is accepted risk for Angular 17 ViewEncapsulation.Emulated. Do not attempt to remove it without migrating components to `ViewEncapsulation.ShadowDom` or `ViewEncapsulation.None` with external stylesheets. The migration path is: switch to `ViewEncapsulation.ShadowDom` per component (requires browser Shadow DOM support and SCSS refactoring) — track this as a deferred security task in PLAN.md, not an immediate fix.
+**Tags:** security, csp, angular, frontend
+
+---
+
+## 2026-06-17 — Task 13: derive debt balance from payment log (stale RETURNING *, extra="forbid" consistency, E2E probe drift)
+
+**What happened:** `update_debt` had two return paths — a no-op path (`SELECT *`) and an update path (`RETURNING *`). Both returned the stored `balance` column. After the migration made `balance` a derived value (computed via JOIN from the payment log), both paths silently returned stale data because neither used the `_DERIVED_DEBT_SELECT` constant that computes the correct balance.
+**Why:** Any path that ends with `SELECT *` or `RETURNING *` on a table whose stored column is superseded by a derived value will return the stale stored value. The derived value is only correct when fetched via the JOIN.
+**Next time:** After any migration that turns a stored column into a derived value, audit every DB function that returns that resource. Create a `_DERIVED_<RESOURCE>_SELECT` constant with the JOIN, and use it in ALL return paths — including the no-op path, not just the update path. Grep for `SELECT *` and `RETURNING *` on the affected table to find all stale paths.
+**Tags:** database, sql, backend, derived-values
+
+---
+
+**What happened:** During TDD for Task 13, only `DebtUpdate` received `extra="forbid"`. A security scan after the fact found that `AccountUpdate`, `IncomeUpdate`, `ExpenseUpdate`, and `SavingsGoalUpdate` still silently discarded unknown fields, leaving the API boundary permissive for those resources.
+**Why:** `extra="forbid"` was added reactively to the model under active development rather than applied as a project-wide convention. Each TDD cycle touches one model at a time, so untouched models accumulate the gap.
+**Next time:** When adding `extra="forbid"` to any Update model in this project, immediately apply it to all other Update models in `models.py` in the same commit. Run `grep -n "class.*Update" backend/models.py` to get the full list and check each one has `extra="forbid"` in its `model_config`.
+**Tags:** security, pydantic, backend, api
+
+---
+
+**What happened:** The Task 12 E2E spec had a probe test asserting PATCH with a `balance` field returned 200 (Task 12 behaviour: silently ignored). Task 13 changed this to 422. The probe never set its "passed" flag, so 6 downstream tests that depended on it were silently skipped — showing as "skipped" with no failure signal.
+**Why:** A probe test that asserts old behaviour will never fire once the behaviour is intentionally hardened. Skipped tests produce no failure signal, so the regression was invisible until the skip count was noticed.
+**Next time:** When hardening a behaviour (silent ignore → explicit reject, 200 → 422), immediately update any probe test that asserted the old behaviour. After any behaviour-hardening commit, scan E2E output for unexpected skips before declaring the task complete.
+**Tags:** e2e, playwright, testing, probes
+
+---
+
 ## 2026-06-11 — Tasks 41-44: renaming an API request field requires a backward-compatibility 422 test
 
 **What happened:** When `RegisterRequest.name` was renamed to `first_name` + `last_name`, a test was added that POSTs the old payload shape (`{ "name": "Alice Smith" }`) and asserts a 422 response. Without this test, a silent regression would go undetected: the old field name could be accepted (e.g. if a validator was accidentally removed) and callers using the old API would receive a 200 instead of a clear error.
@@ -442,5 +539,35 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 **Why:** `btoa()` produces standard base64 (uses `+`, `/`, `=` padding). JWT uses base64url (uses `-`, `_`, no padding). `atob()` on the Angular side accepts both variants, so the conversion is optional for decoding but required for full correctness and for any library that validates format before decoding. The fake signature segment can be any non-empty string since the E2E spec does not verify the signature.
 **Next time:** When a Playwright spec needs a fake JWT that Angular's `AuthService` can parse: use `btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')` for both the header and payload segments, join with `.`, and append any non-empty string as the signature. Include `exp: Math.floor(Date.now() / 1000) + 86400` so the token does not appear expired.
 **Tags:** e2e, playwright, testing, auth
+
+---
+
+## 2026-07-06 — Task 20: pivot migration (dual-scope monthly_budgets, dropped 6 feature tables)
+
+**What happened:** The pivot migration created `monthly_budgets` with a dual scope — a row is EITHER a personal budget OR a shared household budget. The first draft made `user_id` `NOT NULL ... ON DELETE CASCADE` and used it as the "creator" of household (shared) budgets too. That meant deleting the creator's account would cascade-delete the entire shared household budget plus all its `income_streams` and `budget_line_items` children — destroying data owned by every other household member. The fix: make `user_id` nullable, store it ONLY for personal budgets (household budgets are household-owned, `user_id IS NULL`), and enforce the invariant with a strict per-scope ownership CHECK (`(scope='personal' AND user_id IS NOT NULL AND household_id IS NULL) OR (scope='household' AND household_id IS NOT NULL AND user_id IS NULL)`).
+**Why:** In a dual-owner / polymorphic-ownership table it is natural to reuse one FK (`user_id`) as both "owner" and "creator." An `ON DELETE CASCADE` on that FK then silently destroys rows conceptually owned by the OTHER party (the household).
+**Next time:** On this project, `monthly_budgets.user_id` is per-scope: NON-NULL only for `scope='personal'`, always NULL for `scope='household'`. Never reintroduce `ON DELETE CASCADE` on `user_id` for a shared-scope row. Any new dual-scope table here must ship the per-scope ownership CHECK in the same migration.
+**Tags:** database, migrations, cascade, data-integrity
+
+---
+
+**What happened:** `monthly_budgets.month` was not normalised to first-of-month, and the "one budget per month" guarantee was a partial-unique-index over `(scope, user_id/household_id, month)`. Because two different day-of-month values (`2026-07-01` and `2026-07-15`) are distinct, the unique index silently permitted two budgets for the same month. Goal percentages (`needs_pct`/`wants_pct`/`savings_pct`) were also left unbounded (app-layer only), so values >100 or negative could be stored. Both were tightened in the follow-up `20260706000015_budget_integrity_constraints.sql` after code review.
+**Why:** A partial-unique-index whose uniqueness depends on a normalised value provides no guarantee unless the normalisation itself is enforced in the DB. The index was correct; the un-normalised `month` defeated it.
+**Next time:** When a UNIQUE (or partial-unique) index depends on a normalised value, enforce the normalisation with a CHECK (`month = date_trunc('month', month)::date`) in the same migration. Bound every percentage/quantity column at the DB layer (`CHECK (needs_pct BETWEEN 0 AND 100)`), not only in Pydantic — app-layer bounds do not protect against direct writes or migrations.
+**Tags:** database, migrations, constraints, data-integrity
+
+---
+
+**What happened:** The migration shipped with 26 static SQL-parsing tests (regex-matching the `.sql` file). They all passed but could not have caught either the CASCADE data-loss bug or the unbounded goal percentages — a static test verifies the file *says* the right thing, not that the DB *behaves* correctly. Real confidence came from Neon's branch-based flow: prepare on a throwaway branch, run behavioural insert-tests (insert deliberately-bad rows inside a `DO` block that `RAISE`s at the end to roll back so nothing persists), THEN apply to main.
+**Why:** This project's established convention is static SQL-parsing migration tests (fast, credential-free). For destructive or constraint-heavy migrations that convention is insufficient on its own — it cannot exercise CHECK/CASCADE/UNIQUE behaviour.
+**Next time:** For any destructive or constraint migration on this project, keep the static SQL tests but ALSO run behavioural insert-tests on a temporary Neon branch before touching main: attempt to insert rows that should violate each new CHECK/UNIQUE inside a `DO $$ ... RAISE EXCEPTION 'rollback' $$` block (so the transaction rolls back), and confirm each bad insert is rejected. Only apply to main once the branch confirms real behaviour.
+**Tags:** database, migrations, testing, neon
+
+---
+
+**What happened:** The new child tables (`income_streams`, `budget_line_items`) scope tenant access ONLY via their `budget_id` FK — they carry no `user_id`/`household_id` of their own. RLS on all three tables is deny-all (`BYPASSRLS` app role + app-layer scoping), so the parent-budget ownership check is the SOLE tenant-isolation control for the children. A forgotten join back to `monthly_budgets` in any child query is a direct cross-tenant IDOR.
+**Why:** When child rows inherit tenancy purely through a parent FK, there is no second line of defence — no per-row `household_id` to also filter on. The parent ownership check is load-bearing in a way that is easy to overlook when writing a "simple" child-table query.
+**Next time:** Every query against `income_streams` or `budget_line_items` MUST join to `monthly_budgets` and enforce the same per-scope ownership predicate as the parent (personal: `user_id = $ctx`; household: `household_id IN (user's households)`). Never fetch a child row by its own id alone. Treat a child query without the parent-ownership join as a security bug in the endpoint tasks.
+**Tags:** security, database, idor, backend
 
 ---
