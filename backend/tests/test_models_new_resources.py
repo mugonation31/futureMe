@@ -206,19 +206,24 @@ def test_should_reject_savings_goal_update_when_current_exceeds_target():
 
 
 # ============================================================
-# Test 14: DebtUpdate accepts balance=0.0 (ge=0 allows zeroing out debt)
+# Test 14: DebtUpdate does not expose a balance field (derived from payment log)
 # ============================================================
 
-def test_should_accept_debt_update_with_balance_zero():
-    """should accept DebtUpdate when balance=0.0 (ge=0 allows zeroing out a paid debt)"""
+def test_should_not_expose_balance_on_debt_update():
+    """should not allow direct balance mutation via DebtUpdate — balance is derived from the payment log"""
     # Arrange
     from models import DebtUpdate
+    import pydantic
 
-    # Act
-    debt = DebtUpdate(balance=0.0)
+    # Act — passing balance should either be silently ignored (extra='ignore')
+    # or raise a validation error; either way, the model must not have a balance field
+    debt = DebtUpdate(name="Car loan")
 
-    # Assert
-    assert debt.balance == 0.0
+    # Assert — DebtUpdate has no balance attribute
+    assert not hasattr(debt, "balance"), (
+        "DebtUpdate must not expose a 'balance' field — balance is derived "
+        "from starting_balance minus confirmed payments"
+    )
 
 
 # ============================================================

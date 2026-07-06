@@ -13,7 +13,7 @@ import { SignupPage } from '../../pages/signup.page';
  *   - Signup page   /signup
  *
  * All tests are purely visual / interaction checks.  They do NOT require a
- * live backend or a Supabase auth session — no credentials are submitted, no
+ * live backend or an auth session — no credentials are submitted, no
  * API calls succeed, and no network mocking is needed.
  *
  * Port

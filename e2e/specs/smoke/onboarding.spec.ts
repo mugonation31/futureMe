@@ -2,8 +2,7 @@
  * Household onboarding E2E tests.
  *
  * REQUIRES: Docker Compose running (`docker compose up -d --build`)
- * REQUIRES: A live Supabase project with test users pre-created.
- *           Set environment variables — see e2e/fixtures/users.ts.
+ * REQUIRES: Test users pre-created in Neon. Set environment variables — see e2e/fixtures/users.ts.
  *
  * Covers:
  *   - Create a household → redirects to /dashboard

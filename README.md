@@ -10,8 +10,8 @@ A shared household finance app for couples and families. Calm, premium, and buil
 |---|---|
 | **Backend** | Python 3.11, FastAPI 0.109, asyncpg, Pydantic 2.5 |
 | **Frontend** | Angular 17.3 (standalone components), TypeScript 5.4, SCSS |
-| **Database** | PostgreSQL via Supabase (RLS on all tables, user-scoped) |
-| **Auth** | Supabase Auth + ES256/HS256 JWT verification |
+| **Database** | PostgreSQL via Neon (RLS on all tables, user-scoped) |
+| **Auth** | Custom JWT (HS256) — register/login via `/api/auth/*` |
 | **Infra** | Docker Compose, Nginx |
 
 ---
@@ -66,8 +66,6 @@ Required variables in `environment.ts`:
 
 | Variable | Description |
 |---|---|
-| `supabaseUrl` | Your Supabase project URL |
-| `supabaseAnonKey` | Supabase anonymous/public key |
 | `apiUrl` | Backend API base URL (e.g. `http://localhost:8002/api`) |
 
 ### Backend
@@ -80,9 +78,8 @@ Required variables in `backend/.env`:
 
 | Variable | Description |
 |---|---|
-| `SUPABASE_URL` | Your Supabase project URL |
-| `SUPABASE_JWT_SECRET` | JWT secret from Supabase project settings |
-| `DATABASE_URL` | PostgreSQL connection string (Supabase direct connection) |
+| `JWT_SECRET` | HS256 signing secret (min 32 chars) |
+| `DATABASE_URL` | Neon PostgreSQL connection string (`sslmode=require`) |
 | `CORS_ORIGINS` | Comma-separated list of allowed origins |
 | `ENVIRONMENT` | `development` or `production` |
 
@@ -127,7 +124,7 @@ future_me/
 │       │   └── services/           # Auth service
 │       ├── core/
 │       │   └── services/
-│       │       └── supabase.service.ts   # Singleton Supabase client
+│       │       └── auth.service.ts       # JWT auth service
 │       ├── dashboard/
 │       │   ├── components/         # DashboardComponent
 │       │   └── services/           # Dashboard data service
@@ -139,7 +136,7 @@ future_me/
 │           ├── navigation/         # Sticky navbar (3-column layout)
 │           └── footer/             # Footer component
 │
-└── supabase/
+└── migrations/
     └── migrations/                 # SQL migrations (schema, RLS policies)
 ```
 
@@ -147,9 +144,9 @@ future_me/
 
 ## Core Concepts
 
-- **User-scoped data.** All database tables are scoped to `user_id` via Supabase Row Level Security. A user can only ever read and write their own data — this is enforced at the database level, not just in application code.
+- **User-scoped data.** All database tables are scoped to `user_id` via Row Level Security on Neon PostgreSQL. A user can only ever read and write their own data — this is enforced at the database level, not just in application code.
 
-- **Auth flow.** Supabase Auth handles sign-up, login, and session management. The Angular app uses a singleton `SupabaseService` to manage the client. The FastAPI backend independently verifies the JWT on every authenticated request, supporting both ES256 (current Supabase default) and HS256 (legacy) tokens.
+- **Auth flow.** Custom JWT auth (HS256) handles sign-up, login, and session management via `/api/auth/register` and `/api/auth/login`. The FastAPI backend issues and verifies tokens; the Angular app stores the token in `localStorage` and attaches it to every API request via an HTTP interceptor.
 
 - **Design system.** All visual language is documented in [DESIGN.md](./DESIGN.md). The core tokens live in `frontend/src/styles.scss`. Use the tokens — do not introduce hardcoded hex values or magic spacing numbers.
 
@@ -198,4 +195,4 @@ The backend is early in development. Only the following endpoints exist:
 | `PUT` | `/api/settings` | Yes | Create or update user settings |
 | `GET` | `/api/dashboard` | Yes | Fetch dashboard stats for the current user |
 
-All authenticated endpoints require a `Bearer <supabase_jwt>` token in the `Authorization` header.
+All authenticated endpoints require a `Bearer <jwt>` token in the `Authorization` header.

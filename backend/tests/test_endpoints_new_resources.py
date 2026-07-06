@@ -63,6 +63,7 @@ SAMPLE_DEBT = {
     "household_id": HOUSEHOLD_ID,
     "user_id": USER_ID,
     "name": "Car Loan",
+    "starting_balance": 8000.0,
     "balance": 8000.0,
     "interest_rate": 5.9,
     "minimum_payment": 200.0,

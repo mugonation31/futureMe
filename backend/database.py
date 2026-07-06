@@ -4,7 +4,7 @@ Database operations using async PostgreSQL
 import asyncpg
 import ssl
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, Dict, Any
 from config import settings
 import bcrypt as _bcrypt
@@ -14,8 +14,8 @@ import bcrypt as _bcrypt
 # Any field outside these sets indicates a malformed or tampered request.
 _ALLOWED_ACCOUNT_UPDATE_FIELDS = frozenset({"name", "type", "balance", "currency"})
 _ALLOWED_INCOME_UPDATE_FIELDS = frozenset({"source", "amount", "frequency"})
-_ALLOWED_EXPENSE_UPDATE_FIELDS = frozenset({"category", "description", "amount", "date", "is_recurring"})
-_ALLOWED_DEBT_UPDATE_FIELDS = frozenset({"name", "balance", "interest_rate", "minimum_payment", "target_payoff_date"})
+_ALLOWED_EXPENSE_UPDATE_FIELDS = frozenset({"category", "name", "amount", "date", "is_recurring"})
+_ALLOWED_DEBT_UPDATE_FIELDS = frozenset({"name", "interest_rate", "minimum_payment"})
 _ALLOWED_SAVINGS_GOAL_UPDATE_FIELDS = frozenset({"name", "target_amount", "current_amount", "deadline"})
 
 
@@ -314,8 +314,9 @@ async def update_account(account_id: str, household_id: str, data) -> Optional[D
             )
         return _serialize_row(row) if row else None
 
-    set_clauses = ", ".join(f"{k} = ${i + 3}" for i, k in enumerate(d.keys()))
-    values = list(d.values())
+    safe_keys = [k for k in _ALLOWED_ACCOUNT_UPDATE_FIELDS if k in d]
+    set_clauses = ", ".join(f"{k} = ${i + 3}" for i, k in enumerate(safe_keys))
+    values = [d[k] for k in safe_keys]
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -357,11 +358,10 @@ async def create_income_entry(household_id: str, user_id: str, data) -> Dict[str
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            """INSERT INTO income_entries (household_id, user_id, source, amount, frequency)
-               VALUES ($1, $2, $3, $4, $5)
+            """INSERT INTO income_entries (household_id, source, amount, frequency)
+               VALUES ($1, $2, $3, $4)
                RETURNING *""",
             household_id,
-            user_id,
             d["source"],
             d["amount"],
             d["frequency"],
@@ -384,8 +384,9 @@ async def update_income_entry(entry_id: str, household_id: str, data) -> Optiona
             )
         return _serialize_row(row) if row else None
 
-    set_clauses = ", ".join(f"{k} = ${i + 3}" for i, k in enumerate(d.keys()))
-    values = list(d.values())
+    safe_keys = [k for k in _ALLOWED_INCOME_UPDATE_FIELDS if k in d]
+    set_clauses = ", ".join(f"{k} = ${i + 3}" for i, k in enumerate(safe_keys))
+    values = [d[k] for k in safe_keys]
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -416,7 +417,9 @@ async def get_expenses(household_id: str) -> list:
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT * FROM expenses WHERE household_id = $1 ORDER BY date DESC",
+            """SELECT id, household_id, name AS description, category, amount, date,
+                      is_recurring, created_at, updated_at
+               FROM expenses WHERE household_id = $1 ORDER BY date DESC""",
             household_id,
         )
     return [_serialize_row(r) for r in rows]
@@ -424,16 +427,18 @@ async def get_expenses(household_id: str) -> list:
 
 async def create_expense(household_id: str, user_id: str, data) -> Dict[str, Any]:
     d = data.model_dump()
+    _desc = d.get("description")
+    _name = _desc if _desc is not None else (d.get("category") or "Expense")
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            """INSERT INTO expenses (household_id, user_id, category, description, amount, date, is_recurring)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)
-               RETURNING *""",
+            """INSERT INTO expenses (household_id, name, category, amount, date, is_recurring)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               RETURNING id, household_id, name AS description, category, amount, date,
+                         is_recurring, created_at, updated_at""",
             household_id,
-            user_id,
-            d.get("category"),
-            d.get("description"),
+            _name,
+            d.get("category") or "Uncategorised",
             d["amount"],
             d["date"],
             d.get("is_recurring", False),
@@ -441,8 +446,14 @@ async def create_expense(household_id: str, user_id: str, data) -> Dict[str, Any
     return _serialize_row(row)
 
 
+_EXPENSE_SELECT = """SELECT id, household_id, name AS description, category, amount, date,
+                            is_recurring, created_at, updated_at FROM expenses"""
+
+
 async def update_expense(expense_id: str, household_id: str, data) -> Optional[Dict[str, Any]]:
     d = data.model_dump(exclude_unset=True)
+    if "description" in d:
+        d["name"] = d.pop("description")
     for key in d:
         if key not in _ALLOWED_EXPENSE_UPDATE_FIELDS:
             raise ValueError(f"Invalid field: {key}")
@@ -450,18 +461,20 @@ async def update_expense(expense_id: str, household_id: str, data) -> Optional[D
         pool = await get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT * FROM expenses WHERE id = $1 AND household_id = $2",
+                f"{_EXPENSE_SELECT} WHERE id = $1 AND household_id = $2",
                 expense_id,
                 household_id,
             )
         return _serialize_row(row) if row else None
 
-    set_clauses = ", ".join(f"{k} = ${i + 3}" for i, k in enumerate(d.keys()))
-    values = list(d.values())
+    safe_keys = [k for k in _ALLOWED_EXPENSE_UPDATE_FIELDS if k in d]
+    set_clauses = ", ".join(f"{k} = ${i + 3}" for i, k in enumerate(safe_keys))
+    values = [d[k] for k in safe_keys]
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            f"UPDATE expenses SET {set_clauses}, updated_at = NOW() WHERE id = $1 AND household_id = $2 RETURNING *",
+            f"UPDATE expenses SET {set_clauses}, updated_at = NOW() WHERE id = $1 AND household_id = $2 "
+            f"RETURNING id, household_id, name AS description, category, amount, date, is_recurring, created_at, updated_at",
             expense_id,
             household_id,
             *values,
@@ -488,7 +501,27 @@ async def get_debts(household_id: str) -> list:
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT * FROM debts WHERE household_id = $1 ORDER BY name",
+            """
+            SELECT
+                d.id,
+                d.household_id,
+                d.name,
+                d.starting_balance,
+                GREATEST(
+                    0,
+                    d.starting_balance - COALESCE(SUM(p.amount), 0)
+                ) AS balance,
+                d.interest_rate,
+                d.minimum_payment,
+                d.created_at,
+                d.updated_at
+            FROM debts d
+            LEFT JOIN debt_payments p
+                   ON p.debt_id = d.id
+            WHERE d.household_id = $1
+            GROUP BY d.id
+            ORDER BY d.name
+            """,
             household_id,
         )
     return [_serialize_row(r) for r in rows]
@@ -496,21 +529,41 @@ async def get_debts(household_id: str) -> list:
 
 async def create_debt(household_id: str, user_id: str, data) -> Dict[str, Any]:
     d = data.model_dump()
+    opening_balance = d["balance"]
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            """INSERT INTO debts (household_id, user_id, name, balance, interest_rate, minimum_payment, target_payoff_date)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)
-               RETURNING *""",
+            """INSERT INTO debts (household_id, name, balance, starting_balance, interest_rate, minimum_payment)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               RETURNING
+                   id,
+                   household_id,
+                   name,
+                   starting_balance,
+                   starting_balance AS balance,
+                   interest_rate,
+                   minimum_payment,
+                   created_at,
+                   updated_at""",
             household_id,
-            user_id,
             d["name"],
-            d["balance"],
+            opening_balance,
+            opening_balance,
             d.get("interest_rate", 0.0),
             d.get("minimum_payment", 0.0),
-            d.get("target_payoff_date"),
         )
     return _serialize_row(row)
+
+
+_DERIVED_DEBT_SELECT = """
+    SELECT d.id, d.household_id, d.name, d.starting_balance,
+           GREATEST(0, d.starting_balance - COALESCE(SUM(p.amount), 0)) AS balance,
+           d.interest_rate, d.minimum_payment, d.created_at, d.updated_at
+    FROM debts d
+    LEFT JOIN debt_payments p ON p.debt_id = d.id
+    WHERE d.id = $1 AND d.household_id = $2
+    GROUP BY d.id
+"""
 
 
 async def update_debt(debt_id: str, household_id: str, data) -> Optional[Dict[str, Any]]:
@@ -518,26 +571,21 @@ async def update_debt(debt_id: str, household_id: str, data) -> Optional[Dict[st
     for key in d:
         if key not in _ALLOWED_DEBT_UPDATE_FIELDS:
             raise ValueError(f"Invalid field: {key}")
-    if not d:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT * FROM debts WHERE id = $1 AND household_id = $2",
-                debt_id,
-                household_id,
-            )
-        return _serialize_row(row) if row else None
-
-    set_clauses = ", ".join(f"{k} = ${i + 3}" for i, k in enumerate(d.keys()))
-    values = list(d.values())
     pool = await get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            f"UPDATE debts SET {set_clauses}, updated_at = NOW() WHERE id = $1 AND household_id = $2 RETURNING *",
-            debt_id,
-            household_id,
-            *values,
-        )
+        if d:
+            safe_keys = [k for k in _ALLOWED_DEBT_UPDATE_FIELDS if k in d]
+            set_clauses = ", ".join(f"{k} = ${i + 3}" for i, k in enumerate(safe_keys))
+            values = [d[k] for k in safe_keys]
+            result = await conn.execute(
+                f"UPDATE debts SET {set_clauses}, updated_at = NOW() WHERE id = $1 AND household_id = $2",
+                debt_id,
+                household_id,
+                *values,
+            )
+            if result == "UPDATE 0":
+                return None
+        row = await conn.fetchrow(_DERIVED_DEBT_SELECT, debt_id, household_id)
     return _serialize_row(row) if row else None
 
 
@@ -550,6 +598,73 @@ async def delete_debt(debt_id: str, household_id: str) -> bool:
             household_id,
         )
     return result != "DELETE 0"
+
+
+# ============================================================
+# Debt Payments CRUD
+# ============================================================
+
+_DEBT_OWNERSHIP_SQL = "SELECT id FROM debts WHERE id = $1 AND household_id = $2"
+
+
+async def _assert_debt_in_household(conn, debt_id: str, household_id: str) -> None:
+    """Raise LookupError if the debt does not belong to the given household."""
+    row = await conn.fetchrow(_DEBT_OWNERSHIP_SQL, debt_id, household_id)
+    if not row:
+        raise LookupError(f"Debt {debt_id} not found in household {household_id}")
+
+
+async def create_debt_payment(
+    debt_id: str, household_id: str, user_id: str, data
+) -> Dict[str, Any]:
+    """Confirm a debt payment for a given month.
+
+    Normalises paid_for_month to the first of the month before insert.
+    Raises LookupError if the debt does not belong to the household.
+    Raises ValueError if a payment for the same (debt_id, paid_for_month) already exists.
+    """
+    d = data.model_dump()
+    first_of_month = d["paid_for_month"].replace(day=1)
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await _assert_debt_in_household(conn, debt_id, household_id)
+        try:
+            row = await conn.fetchrow(
+                """INSERT INTO debt_payments (debt_id, household_id, user_id, amount, paid_for_month)
+                   VALUES ($1, $2, $3, $4, $5)
+                   RETURNING id, debt_id, household_id, user_id, amount, paid_for_month, confirmed_at""",
+                debt_id,
+                household_id,
+                user_id,
+                d["amount"],
+                first_of_month,
+            )
+        except asyncpg.UniqueViolationError:
+            raise ValueError(
+                f"Already confirmed a payment for debt {debt_id} in month {first_of_month}"
+            )
+
+    return _serialize_row(row)
+
+
+async def get_debt_payments(debt_id: str, household_id: str) -> list:
+    """Return confirmed payments for a debt, newest first.
+
+    Raises LookupError if the debt does not belong to the household.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await _assert_debt_in_household(conn, debt_id, household_id)
+        rows = await conn.fetch(
+            """SELECT id, debt_id, household_id, user_id, amount, paid_for_month, confirmed_at
+               FROM debt_payments
+               WHERE debt_id = $1 AND household_id = $2
+               ORDER BY paid_for_month DESC""",
+            debt_id,
+            household_id,
+        )
+    return [_serialize_row(r) for r in rows]
 
 
 # ============================================================
@@ -598,8 +713,9 @@ async def update_savings_goal(goal_id: str, household_id: str, data) -> Optional
             )
         return _serialize_row(row) if row else None
 
-    set_clauses = ", ".join(f"{k} = ${i + 3}" for i, k in enumerate(d.keys()))
-    values = list(d.values())
+    safe_keys = [k for k in _ALLOWED_SAVINGS_GOAL_UPDATE_FIELDS if k in d]
+    set_clauses = ", ".join(f"{k} = ${i + 3}" for i, k in enumerate(safe_keys))
+    values = [d[k] for k in safe_keys]
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -626,6 +742,29 @@ async def delete_savings_goal(goal_id: str, household_id: str) -> bool:
 # Dashboard stats
 # ============================================================
 
+async def get_monthly_expenses(household_id: str, conn) -> float:
+    """Return the true monthly expense total for a household.
+
+    Summing rule:
+      - All expenses where is_recurring = true (any date) count every month.
+      - Non-recurring expenses only count when their date falls in the current
+        calendar month (date_trunc match against CURRENT_DATE).
+
+    This helper is the single source of truth used by get_dashboard_stats and
+    any downstream calculation (emergency fund target, freed-cash suggestions).
+    """
+    row = await conn.fetchrow("""
+        SELECT COALESCE(SUM(amount), 0) AS total_expenses
+        FROM expenses
+        WHERE household_id = $1
+          AND (
+              is_recurring = true
+              OR date_trunc('month', date) = date_trunc('month', CURRENT_DATE)
+          )
+    """, household_id)
+    return float(row["total_expenses"])
+
+
 async def get_dashboard_stats(household_id: str) -> dict:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -641,21 +780,24 @@ async def get_dashboard_stats(household_id: str) -> dict:
             FROM income_entries WHERE household_id = $1
         """, household_id)
 
-        # This month's expenses
-        expense_row = await conn.fetchrow("""
-            SELECT COALESCE(SUM(amount), 0) as total_expenses
-            FROM expenses
-            WHERE household_id = $1
-            AND date_trunc('month', date) = date_trunc('month', CURRENT_DATE)
-        """, household_id)
+        # True monthly expenses (recurring any date + current-month non-recurring)
+        total_expenses = await get_monthly_expenses(household_id, conn)
 
-        # Debt summary
+        # Debt summary — aggregate derived balances (starting_balance - confirmed payments)
         debt_row = await conn.fetchrow("""
             SELECT
-                COALESCE(SUM(balance), 0) as total_owed,
-                COALESCE(SUM(minimum_payment), 0) as total_minimum_payments,
-                COUNT(*) as debt_count
-            FROM debts WHERE household_id = $1
+                COALESCE(SUM(
+                    GREATEST(0, d.starting_balance - COALESCE(p.paid, 0))
+                ), 0) AS total_owed,
+                COALESCE(SUM(d.minimum_payment), 0) AS total_minimum_payments,
+                COUNT(DISTINCT d.id) AS debt_count
+            FROM debts d
+            LEFT JOIN (
+                SELECT debt_id, SUM(amount) AS paid
+                FROM debt_payments
+                GROUP BY debt_id
+            ) p ON p.debt_id = d.id
+            WHERE d.household_id = $1
         """, household_id)
 
         # Emergency fund (savings_goal named 'Emergency Fund')
@@ -673,8 +815,6 @@ async def get_dashboard_stats(household_id: str) -> dict:
         """, household_id)
 
         total_income = float(income_row["total_income"])
-        total_expenses = float(expense_row["total_expenses"])
-
         ef_current = float(ef_row["current_amount"]) if ef_row else 0.0
         ef_target = float(ef_row["target_amount"]) if ef_row else 0.0
 

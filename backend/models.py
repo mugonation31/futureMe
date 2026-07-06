@@ -4,6 +4,7 @@ Pydantic models for request/response validation
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional, Literal
 from datetime import datetime, date as date_type
+from decimal import Decimal
 
 _SPECIAL_CHARS = set("!@#$%^&*()_+-=[]{}|;':\",./<>?")
 
@@ -174,6 +175,8 @@ class AccountCreate(BaseModel):
 
 
 class AccountUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     type: Optional[Literal["checking", "savings", "cash"]] = None
     balance: Optional[float] = Field(None, ge=0)
@@ -216,6 +219,8 @@ class IncomeCreate(BaseModel):
 
 
 class IncomeUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     source: Optional[str] = Field(None, min_length=1, max_length=200)
     amount: Optional[float] = Field(None, gt=0)
     frequency: Optional[Literal["monthly", "weekly", "annual"]] = None
@@ -233,7 +238,7 @@ class IncomeResponse(BaseModel):
 
     id: str
     household_id: str
-    user_id: str
+    user_id: Optional[str] = None
     source: str
     amount: float
     frequency: str
@@ -261,6 +266,8 @@ class ExpenseCreate(BaseModel):
 
 
 class ExpenseUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     category: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
     amount: Optional[float] = Field(None, gt=0)
@@ -280,7 +287,7 @@ class ExpenseResponse(BaseModel):
 
     id: str
     household_id: str
-    user_id: str
+    user_id: Optional[str] = None
     category: Optional[str]
     description: Optional[str]
     amount: float
@@ -299,8 +306,6 @@ class DebtCreate(BaseModel):
     balance: float = Field(..., gt=0)
     interest_rate: float = Field(default=0.0, ge=0, le=100)
     minimum_payment: float = Field(default=0.0, ge=0)
-    target_payoff_date: Optional[date_type] = None
-
     @field_validator("name")
     @classmethod
     def sanitise_text_fields(cls, v):
@@ -308,11 +313,11 @@ class DebtCreate(BaseModel):
 
 
 class DebtUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: Optional[str] = Field(None, min_length=1, max_length=200)
-    balance: Optional[float] = Field(None, ge=0)
     interest_rate: Optional[float] = Field(None, ge=0, le=100)
     minimum_payment: Optional[float] = Field(None, ge=0)
-    target_payoff_date: Optional[date_type] = None
 
     @field_validator("name", mode="before")
     @classmethod
@@ -327,14 +332,37 @@ class DebtResponse(BaseModel):
 
     id: str
     household_id: str
-    user_id: str
+    user_id: Optional[str] = None
     name: str
+    starting_balance: float
     balance: float
     interest_rate: float
     minimum_payment: float
-    target_payoff_date: Optional[date_type]
     created_at: datetime
     updated_at: datetime
+
+
+# ============================================================
+# Debt payment models
+# ============================================================
+
+class DebtPaymentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(..., gt=0)
+    paid_for_month: date_type
+
+
+class DebtPaymentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    debt_id: str
+    household_id: str
+    user_id: Optional[str] = None
+    amount: Decimal
+    paid_for_month: date_type
+    confirmed_at: datetime
 
 
 # ============================================================
@@ -362,6 +390,8 @@ class SavingsGoalCreate(BaseModel):
 
 
 class SavingsGoalUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     target_amount: Optional[float] = Field(None, gt=0)
     current_amount: Optional[float] = Field(None, ge=0)

@@ -1,8 +1,7 @@
 /**
  * Test user fixtures.
  *
- * SETUP REQUIRED: These tests require a live Supabase project.
- * Override with environment variables before running:
+ * SETUP REQUIRED: Override with environment variables before running:
  *
  *   TEST_OWNER_EMAIL=owner@example.com
  *   TEST_OWNER_PASSWORD=ownerpassword

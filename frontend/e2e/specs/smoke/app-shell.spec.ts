@@ -8,7 +8,7 @@ import { SignupPage } from '../../pages/signup.page';
  *
  * These tests verify the static/visual correctness of the futureMe app shell:
  * fonts, design tokens, navigation visibility, and layout. They do NOT require
- * a live backend or a real Supabase auth session — every test navigates to a
+ * a live backend or a real auth session — every test navigates to a
  * public route (/login or /signup) where no authentication is needed.
  *
  * Port: 4202 (configured in frontend/e2e/.env → E2E_BASE_URL).

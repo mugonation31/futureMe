@@ -15,7 +15,7 @@ import { loginAs, clearSession } from '../../utils/auth';
  *
  * 2. Guard: unauthenticated access to /dashboard → redirect to /login.
  *    Does NOT require a live backend — the authGuard fires before any API
- *    call when there is no Supabase session in localStorage.
+ *    call when there is no auth session in localStorage.
  *
  * 3. Guard: unauthenticated access to /onboarding → redirect to /login.
  *    Same reasoning as above.
@@ -68,14 +68,11 @@ const apiUrl = process.env['E2E_API_URL'] ?? 'http://localhost:8001/api';
 
 test.describe('Onboarding page — static rendering', () => {
   // The /onboarding route is protected by authGuard.  To test the rendered
-  // UI without a real session we intercept both the Supabase getSession call
-  // and the householdGuard's /households/me call so the Angular app thinks
-  // the user is logged-in with no household.
-  //
-  // Because mocking Supabase's internal SDK calls from outside is complex,
-  // these tests instead rely on a pre-authenticated context.  They are marked
-  // to skip when credentials are absent, and they use page.route() to stub
-  // the households/me endpoint so they do NOT depend on a live database.
+  // UI without a real session we intercept the householdGuard's /households/me
+  // call so the Angular app thinks the user is logged-in with no household.
+  // These tests rely on a pre-authenticated context.  They are marked to skip
+  // when credentials are absent, and they use page.route() to stub the
+  // households/me endpoint so they do NOT depend on a live database.
 
   test('page title is "futureMe"', async ({ page }) => {
     // Navigate to /login first (public route) and check title — this is
@@ -85,7 +82,7 @@ test.describe('Onboarding page — static rendering', () => {
   });
 
   test('onboarding URL requires authentication — unauthenticated visit redirects to /login', async ({ page }) => {
-    // Fresh context means no Supabase session in storage.
+    // Fresh context means no auth session in storage.
     await page.goto('/onboarding');
 
     // authGuard redirects to /login with a returnUrl query param.
@@ -125,17 +122,12 @@ test.describe('Route guards — unauthenticated user', () => {
 
 test.describe('Onboarding page — UI elements (mocked session)', () => {
   /**
-   * We mock Supabase's getSession REST call and the households/me endpoint so
-   * that the Angular app loads the /onboarding page without requiring real
-   * Supabase credentials or a live database.
+   * We stub the households/me endpoint so that the Angular app loads the
+   * /onboarding page without requiring a live database.
    *
-   * Supabase JS SDK calls:  POST https://<project>.supabase.co/auth/v1/token
-   *                         GET  https://<project>.supabase.co/auth/v1/user
    * Angular's householdGuard calls: GET <apiUrl>/households/me
    *
-   * Because the exact Supabase project URL is unknown at the code level, we
-   * route-intercept the households/me call (the one we own) and allow real
-   * Supabase calls to fail silently — then skip these tests when there is no
+   * We route-intercept that call and skip these tests when there is no
    * authenticated session to make them meaningful.  See the credential-based
    * tests below for full end-to-end coverage.
    *

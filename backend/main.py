@@ -23,6 +23,7 @@ from models import (
     IncomeCreate, IncomeUpdate, IncomeResponse,
     ExpenseCreate, ExpenseUpdate, ExpenseResponse,
     DebtCreate, DebtUpdate, DebtResponse,
+    DebtPaymentCreate, DebtPaymentResponse,
     SavingsGoalCreate, SavingsGoalUpdate, SavingsGoalResponse,
 )
 import database as db
@@ -413,6 +414,33 @@ async def delete_debt(
     deleted = await db.delete_debt(debt_id, ctx.household_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Debt not found")
+
+
+@app.post("/api/debts/{debt_id}/payments", response_model=DebtPaymentResponse, status_code=201)
+async def confirm_debt_payment(
+    debt_id: str,
+    body: DebtPaymentCreate,
+    ctx: CurrentUserContext = Depends(require_household),
+):
+    try:
+        payment = await db.create_debt_payment(debt_id, ctx.household_id, ctx.user_id, body)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    return payment
+
+
+@app.get("/api/debts/{debt_id}/payments", response_model=list[DebtPaymentResponse])
+async def list_debt_payments(
+    debt_id: str,
+    ctx: CurrentUserContext = Depends(require_household),
+):
+    try:
+        payments = await db.get_debt_payments(debt_id, ctx.household_id)
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return payments
 
 
 # ============================================================

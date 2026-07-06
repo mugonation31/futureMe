@@ -62,5 +62,54 @@ export default defineConfig({
       testMatch: ["**/cors-api.spec.ts"],
       use: { baseURL: "http://localhost:8002" },
     },
+    {
+      // Task 12 — monthly expenses dashboard tests.
+      // Verifies that recurring expenses from prior months and current-month
+      // non-recurring expenses are correctly summed in total_expenses, and that
+      // the dashboard Net Position card reflects the correct value.
+      //
+      // REQUIRES: Docker Compose running (backend on 8002, frontend on 4202).
+      // Tests are skipped automatically when the backend is unreachable.
+      //
+      // Run only this project with:
+      //   npx playwright test --project=monthly-expenses
+      name: "monthly-expenses",
+      testDir: "./e2e/specs/dashboard",
+      testMatch: ["**/monthly-expenses.spec.ts"],
+      use: { baseURL: "http://localhost:4202" },
+    },
+    {
+      // Task 12 (DB migration) — debt balance immutability and CRUD regression.
+      // Verifies that DebtUpdate no longer accepts `balance`, that existing
+      // debt CRUD continues to work after the model change, and that savings-goal
+      // CRUD is unaffected by the two new nullable columns added to savings_goals.
+      //
+      // REQUIRES: Docker Compose running (backend on 8002).
+      // Tests are skipped automatically when the backend is unreachable.
+      //
+      // Run only this project with:
+      //   npx playwright test --project=debt-regression
+      name: "debt-regression",
+      testDir: "./e2e/specs/debts",
+      testMatch: ["**/debt-balance-immutability.spec.ts"],
+      use: { baseURL: "http://localhost:8002" },
+    },
+    {
+      // Task 13 — debt derived-balance E2E tests.
+      // Verifies that POST /api/debts returns starting_balance equal to the
+      // submitted balance, that GET /api/debts exposes derived balances,
+      // that PATCH /api/debts/{id} rejects `balance` with 422, and that
+      // GET /api/dashboard debt_summary.total_owed aggregates derived balances.
+      //
+      // REQUIRES: Docker Compose running (backend on 8002).
+      // Tests are skipped automatically when the backend is unreachable.
+      //
+      // Run only this project with:
+      //   npx playwright test --project=debt-derived-balance
+      name: "debt-derived-balance",
+      testDir: "./e2e/specs/debts",
+      testMatch: ["**/debt-derived-balance.spec.ts"],
+      use: { baseURL: "http://localhost:8002" },
+    },
   ],
 });
