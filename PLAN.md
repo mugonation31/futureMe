@@ -556,7 +556,7 @@ Ship this ASAP so the user can start using it.
   - **Downstream impact**: Task 22 must create household budgets with `user_id = NULL`
     and personal budgets with `household_id = NULL`; Task 21 models reflect this.
 
-### Task 21 — Backend: retire old feature layer + add core Pydantic models (Size: M)
+### Task 21 — Backend: retire old feature layer + add core Pydantic models (Size: M) [x]
 - **Description**: Remove the retired feature code so the app imports against the new
   schema, and add the new request/response models. No new endpoints yet — this slice
   lands a clean-compiling backend with the new model vocabulary.
@@ -592,6 +592,19 @@ Ship this ASAP so the user can start using it.
     `debt_payments` / `savings_goals` anywhere in `backend/`.
   - New models import cleanly with the validators (label sanitised via
     `_sanitise_text`, amounts `>= 0`, goal pcts 0–100, `LineItem.bucket` constrained).
+- **Completed (2026-07-07)**: shipped through all quality phases — TDD (20 model
+  tests), code review (Approve, 0 blocking), security scan (0 CRITICAL/HIGH; one LOW,
+  currency not sanitised, fixed in-cycle). Two extra hardening fixes landed during
+  review/security: whitespace-only label rejection on Create models, and currency
+  sanitisation, with 5 added regression tests (test file now 25, all passing). E2E/
+  regression introduced zero new failures.
+- **Deferred items surfaced during the cycle** (no new formal tasks — folded into
+  existing tasks):
+  - Dead `require_household` dependency in `main.py` — staged for Task 22.
+  - `BudgetResponse` scope invariant enforcement — deferred to Task 22 query layer.
+  - Suite hygiene: remove stale "Invoice Me" test cleanup, add real `/api/settings`
+    and `/api/dashboard` stub tests — a follow-up to fold into a later test task
+    (e.g. Task 31).
 
 ### Task 22 — Backend: current-month budget bootstrap (GET, auto-create + seed) (Size: M)
 - **Description**: The core read path. `GET /api/budget?month=YYYY-MM-01&scope=household`

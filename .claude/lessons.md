@@ -571,3 +571,30 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 **Tags:** security, database, idor, backend
 
 ---
+
+## 2026-07-07 — Task 21: Pydantic Create validators ran in mode="after" — whitespace-only labels bypassed min_length=1
+
+**What happened:** The new `*Create` models declared `label: str = Field(min_length=1)` plus a `_sanitise_text` `field_validator`. A whitespace-only input ("   ") passed validation and was stored as an empty string. The `min_length=1` check saw the raw 3-character string and passed BEFORE `_sanitise_text` (running in the default `mode="after"`) stripped it to "". The `*Update` models were already immune because their sanitiser used `mode="before"`, so the strip happened first and `min_length` then rejected the empty result. Caught in code review; fixed by adding an explicit empty-check inside the Create validators.
+**Why:** In Pydantic 2, `Field(min_length=...)` runs as part of core-schema validation. A `mode="after"` `field_validator` runs AFTER that, so any normalisation it performs (stripping) cannot feed back into the length check. Only `mode="before"` validators run early enough for `min_length` to see the normalised value.
+**Next time:** On this project, every free-text `*Create`/`*Update` model must strip in a `mode="before"` validator (matching the Update models), OR carry an explicit non-empty assertion inside an after-validator. Do not rely on `min_length=1` alone to reject whitespace — it does not, unless the strip runs before it. When adding a new model, copy the Update-model validator shape, not the Create one that shipped in Task 21.
+**Tags:** pydantic, validation, backend, models
+
+---
+
+## 2026-07-07 — Task 21: _sanitise_text applied to `label` but not `currency` — stored-reflection vector on a sibling field
+
+**What happened:** New models routed the `label` field through `_sanitise_text` but left `currency` unsanitised. Because `currency` is echoed back on `BudgetResponse`, NUL / BiDi / `<script>` payloads could be stored and reflected. Flagged by the security scan; fixed by adding a `mode="before"` sanitise validator to `currency`.
+**Why:** When a project has a shared sanitiser helper, it gets applied to the "obviously user-facing" field (label) and quietly forgotten on the less-obvious sibling (a currency code that is still free-text and still echoed). Partial coverage looks safe in review because the helper IS present in the model.
+**Next time:** On this project, EVERY string field that is (a) user-supplied and (b) ever echoed in a response must pass through `_sanitise_text` via a `mode="before"` validator — currency codes, enums-stored-as-str, and codes included. When reviewing a model, grep for every `str` field and confirm each has the sanitiser, rather than confirming the sanitiser merely exists somewhere in the class.
+**Tags:** security, sanitisation, stored-xss, models
+
+---
+
+## 2026-07-07 — Task 21: 23 stale "Invoice Me" tests mask real regressions in the pytest run
+
+**What happened:** The Task 21 backend test run showed 23 pre-existing failures. All are stale freelancer-domain "Invoice Me" tests (Client/Invoice/Schedule/company_settings) that predate even the Task 20 pivot and target retired functions like `upsert_company_settings` that never existed in this codebase. They are pure noise but make it hard to tell whether a new change caused a real regression. Separately, `/api/settings` GET/PUT currently has NO passing test because its only tests target that non-existent `upsert_company_settings`.
+**Why:** The app pivoted twice (Invoice Me → Money Flow → Intentional Spending) without deleting the superseded test files, so the suite accumulated tests for domains and functions that no longer exist.
+**Next time:** Treat the 23 Invoice/Client/Schedule failures as known-stale — do NOT investigate them as regressions. When judging a Task's E2E result, filter them out and compare only the delta. Schedule a cleanup task to delete these files and write a real `/api/settings` test. Until then, a green-minus-23 run is the baseline, not 23 new problems.
+**Tags:** testing, tech-debt, regression, pytest
+
+---
