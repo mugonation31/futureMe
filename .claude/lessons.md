@@ -598,3 +598,21 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 **Tags:** testing, tech-debt, regression, pytest
 
 ---
+
+## 2026-07-07 — Task 22: GET /api/budget bootstrap — auto-create-on-GET needs a bound on the client-supplied key
+
+**What happened:** `GET /api/budget?month=...&scope=...` auto-creates and seeds ~24 rows per distinct (scope, owner, month) on first access. `month` was accepted unbounded, so a single authenticated user could iterate arbitrary months and force unbounded row creation (write-amplification / storage-DoS, OWASP A04). It is also a *side-effecting GET*, which prefetchers, link crawlers, and uptime monitors trigger automatically. Fixed with a ±12-month clamp that returns 422 outside the window.
+**Why:** The write-on-read was a convenience (bootstrap-on-first-view) and the bound felt unnecessary because the value comes from an authenticated user — but auth does not limit how many distinct months one user can request, and GET is assumed side-effect-free by the whole ecosystem of automated clients.
+**Next time:** For any budget/bootstrap endpoint in this project that creates rows keyed on a client-supplied value (Tasks 23-24), clamp that value to a semantically valid window and return 422 outside it. If the creation is not naturally idempotent-and-cheap, prefer an explicit POST over auto-create-on-GET. The ±12-month clamp on `month` is the reference pattern.
+**Tags:** security, api, fastapi, backend
+
+---
+
+## 2026-07-07 — Task 22: budget endpoints — structural tenant isolation (no tenant-id param, owner resolved server-side)
+
+**What happened:** The `GET /api/budget` route exposes no tenant/household/owner id as a parameter. The owner id is always resolved server-side from the JWT plus household membership, so cross-tenant access is structurally impossible — there is no id for a caller to tamper with. Both code review and the security scan validated this as correct and called it the pattern to reuse for the remaining budget endpoints.
+**Why:** Endpoints that accept an owner/household id as a param push the tenant-isolation burden onto every handler (which must re-verify the caller owns that id). Omitting the param entirely and deriving the owner from the authenticated context removes the class of IDOR bugs by construction rather than by check.
+**Next time:** For every budget endpoint in Tasks 23-24 (and any household-scoped resource), do not accept household_id / owner_id as a query or path param. Resolve it server-side from the JWT and `get_household_by_user`. If a design requires the client to pass a tenant id, treat that as a red flag to challenge before implementing.
+**Tags:** security, auth, api, backend
+
+---

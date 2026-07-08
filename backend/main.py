@@ -1,10 +1,10 @@
 """
 FastAPI backend for futureMe app
 """
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date as date_type
 from typing import Optional
 import jwt as pyjwt
 
@@ -18,6 +18,7 @@ from models import (
     RegisterRequest, LoginRequest, AuthResponse, AuthUser,
     RefreshRequest, AccessTokenResponse,
     ForgotPasswordRequest, ResetPasswordRequest,
+    BudgetResponse, BudgetScope,
 )
 import database as db
 import email_service
@@ -45,15 +46,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
-
-
-# Authorization policy: all endpoints that require a household must use this
-# dependency. It ensures the user is authenticated AND belongs to a household.
-def require_household(context: CurrentUserContext = Depends(get_current_user)) -> CurrentUserContext:
-    """Dependency that enforces a household is set up, returning the full user context."""
-    if not context.household_id:
-        raise HTTPException(status_code=403, detail="Household not set up")
-    return context
 
 
 def _create_access_token(user_id: str, email: str, display_name: Optional[str]) -> str:
@@ -249,6 +241,83 @@ async def update_settings(
 async def get_dashboard(context: CurrentUserContext = Depends(get_current_user)):
     """Placeholder until the monthly-budget dashboard lands (Task 22+)."""
     return {"message": "Dashboard is being rebuilt for the Intentional Spending Tracker."}
+
+
+# ============================================================
+# Budget endpoint — current-month bootstrap (auto-create + seed)
+# ============================================================
+
+# How far from the current month a client may request. Bounds the auto-create
+# write amplification (each new month seeds a budget + starter line items).
+_MAX_BUDGET_MONTHS_AWAY = 12
+
+
+@app.get("/api/budget", response_model=BudgetResponse)
+async def get_budget(
+    month: Optional[date_type] = Query(
+        None, description="Any date in the target month; normalised to first-of-month."
+    ),
+    scope: BudgetScope = Query("household"),
+    context: CurrentUserContext = Depends(get_current_user),
+):
+    """Return the caller's budget for a month+scope, creating+seeding it on first access.
+
+    Scope-branched auth: a single route cannot swap dependencies by query param, so
+    we depend on get_current_user and enforce household membership in-handler when
+    scope='household'. Tenant scoping (the WHERE predicate) lives entirely in the
+    database layer.
+    """
+    # Default + normalise: DB CHECK requires month = first-of-month.
+    today = datetime.now(timezone.utc).date()
+    current_month = date_type(today.year, today.month, 1)
+    if month is None:
+        month = current_month
+    else:
+        month = month.replace(day=1)
+
+    # Clamp to a sane window: this GET auto-creates a budget + seed rows per
+    # distinct month, so reject far-off months to prevent write amplification.
+    months_from_now = (month.year - current_month.year) * 12 + (
+        month.month - current_month.month
+    )
+    if abs(months_from_now) > _MAX_BUDGET_MONTHS_AWAY:
+        raise HTTPException(
+            status_code=422,
+            detail=f"month must be within {_MAX_BUDGET_MONTHS_AWAY} months of the current month",
+        )
+
+    async def _currency() -> str:
+        """User's currency preference if present, else the DB default '$'."""
+        user_settings = await db.get_user_settings(context.user_id)
+        return (user_settings or {}).get("currency") or "$"
+
+    if scope == "household":
+        # get_household_by_user joins household_members WHERE user_id = caller, so a
+        # non-None result already proves membership — no extra role check needed.
+        household = await db.get_household_by_user(context.user_id)
+        if household is None:
+            raise HTTPException(status_code=403, detail="Not a member of any household")
+        household_id = household["id"]
+        await db.ensure_budget_for_month(
+            "household", month=month, household_id=household_id, currency=await _currency()
+        )
+        data = await db.get_budget("household", month=month, household_id=household_id)
+    else:
+        await db.ensure_budget_for_month(
+            "personal", month=month, user_id=context.user_id, currency=await _currency()
+        )
+        data = await db.get_budget("personal", month=month, user_id=context.user_id)
+
+    if data is None:
+        raise HTTPException(status_code=404, detail="Budget not found")
+
+    # Guarantee the BudgetResponse scope invariant (Task 21 deferred item).
+    budget = BudgetResponse.model_validate(data)
+    if budget.scope == "personal":
+        budget.household_id = None
+    else:
+        budget.user_id = None
+    return budget
 
 
 # ============================================================

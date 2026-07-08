@@ -257,3 +257,188 @@ async def join_household(user_id: str, household_id: str) -> Dict[str, Any]:
         except asyncpg.UniqueViolationError:
             raise ValueError("User is already in a household")
     return _serialize_row(row)
+
+
+# ============================================================
+# Monthly budget bootstrap (Intentional Spending Tracker)
+# ============================================================
+
+# Default seed line items per bucket, in display order. Seeded ONCE on the first
+# access to a (scope, owner, month) budget so the screen is never blank. All seed
+# amounts are 0; the user fills them in.
+DEFAULT_LINE_ITEMS: Dict[str, list] = {
+    "fundamentals": [
+        "Rent/Mortgage", "Groceries", "Insurance", "Car Payment",
+        "Gas/Transportation", "Minimum Debt Payments", "Phone", "Internet",
+        "Electricity", "Miscellaneous",
+    ],
+    "future_you": [
+        "Emergency Fund", "Investment accounts", "Workplace retirement",
+        "Extra debt payments", "Downpayment",
+    ],
+    "fun": [
+        "Clothing", "Eating out", "Travel", "Personal Care", "Subscriptions",
+        "Donations", "Coffees", "Miscellaneous",
+    ],
+}
+
+# Canonical bucket order for assembling the response.
+_BUCKET_ORDER = ("fundamentals", "future_you", "fun")
+
+
+def _first_of_month(value):
+    """Normalise a date to the first of its calendar month (DB CHECK requires it)."""
+    return value.replace(day=1)
+
+
+async def _fetch_budget_row(conn, scope: str, month, user_id, household_id):
+    """Fetch the single budget row for a (scope, owner, month), or None.
+
+    The WHERE predicate is the ONLY tenant isolation (deny-all RLS + BYPASSRLS
+    role), so it is centralised here and branches strictly on scope.
+    """
+    if scope == "household":
+        return await conn.fetchrow(
+            """SELECT * FROM monthly_budgets
+               WHERE scope = 'household' AND household_id = $1 AND month = $2""",
+            household_id, month,
+        )
+    return await conn.fetchrow(
+        """SELECT * FROM monthly_budgets
+           WHERE scope = 'personal' AND user_id = $1 AND month = $2""",
+        user_id, month,
+    )
+
+
+async def _seed_line_items(conn, budget_id: str) -> None:
+    """Insert the default line items for a freshly-created budget (all amount 0)."""
+    rows = []
+    for bucket in _BUCKET_ORDER:
+        for position, label in enumerate(DEFAULT_LINE_ITEMS[bucket]):
+            rows.append((budget_id, bucket, label, 0, position))
+    await conn.executemany(
+        """INSERT INTO budget_line_items (budget_id, bucket, label, amount, position)
+           VALUES ($1, $2, $3, $4, $5)""",
+        rows,
+    )
+
+
+async def ensure_budget_for_month(
+    scope: str, month, *, user_id=None, household_id=None, currency: str = "$",
+) -> Dict[str, Any]:
+    """Return the (scope, owner, month) budget, creating + seeding it on first access.
+
+    Race-safe: INSERT ... ON CONFLICT DO NOTHING against the relevant partial
+    unique index. When the insert returns a row it is brand new, so we seed the
+    default line items; when it returns nothing the budget already existed
+    (concurrent create or prior access) and we simply re-fetch it — never
+    re-seeding. Create + seed happen in ONE transaction.
+    """
+    month = _first_of_month(month)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            if scope == "household":
+                created = await conn.fetchrow(
+                    """INSERT INTO monthly_budgets (scope, user_id, household_id, month, currency)
+                       VALUES ($1, $2, $3, $4, $5)
+                       ON CONFLICT (household_id, month) WHERE scope = 'household'
+                       DO NOTHING
+                       RETURNING *""",
+                    "household", None, household_id, month, currency,
+                )
+            else:
+                created = await conn.fetchrow(
+                    """INSERT INTO monthly_budgets (scope, user_id, household_id, month, currency)
+                       VALUES ($1, $2, $3, $4, $5)
+                       ON CONFLICT (user_id, month) WHERE scope = 'personal'
+                       DO NOTHING
+                       RETURNING *""",
+                    "personal", user_id, None, month, currency,
+                )
+            if created is not None:
+                await _seed_line_items(conn, created["id"])
+                row = created
+            else:
+                row = await _fetch_budget_row(conn, scope, month, user_id, household_id)
+    return _serialize_row(row)
+
+
+def _bucket_dashboard(bucket: str, goal_pct: float) -> Dict[str, Any]:
+    """Zeroed dashboard for a bucket (real compute lands in Task 25)."""
+    return {
+        "bucket": bucket,
+        "goal_pct": float(goal_pct),
+        "ideal_amount": 0.0,
+        "actual_pct": 0.0,
+        "bucket_total": 0.0,
+        "available_to_spend": 0.0,
+        "is_over_flag": False,
+    }
+
+
+def _assemble_budget(budget_row, stream_rows, item_rows) -> Dict[str, Any]:
+    """Build the BudgetResponse-shaped dict from raw rows (compute fields zeroed)."""
+    b = _serialize_row(budget_row)
+    goals = {
+        "fundamentals_goal_pct": float(b["fundamentals_goal_pct"]),
+        "future_you_goal_pct": float(b["future_you_goal_pct"]),
+        "fun_goal_pct": float(b["fun_goal_pct"]),
+    }
+    goal_for = {
+        "fundamentals": goals["fundamentals_goal_pct"],
+        "future_you": goals["future_you_goal_pct"],
+        "fun": goals["fun_goal_pct"],
+    }
+    items_by_bucket: Dict[str, list] = {k: [] for k in _BUCKET_ORDER}
+    for item in item_rows:
+        d = _serialize_row(item)
+        items_by_bucket.setdefault(d["bucket"], []).append(d)
+
+    buckets = {
+        bucket: {
+            "line_items": items_by_bucket.get(bucket, []),
+            "dashboard": _bucket_dashboard(bucket, goal_for[bucket]),
+        }
+        for bucket in _BUCKET_ORDER
+    }
+
+    income_streams = [_serialize_row(s) for s in stream_rows]
+    total_income = sum(float(s["amount"]) for s in income_streams)
+
+    return {
+        "id": b["id"],
+        "scope": b["scope"],
+        "user_id": b.get("user_id"),
+        "household_id": b.get("household_id"),
+        "month": b["month"],
+        "currency": b["currency"],
+        "goals": goals,
+        "total_income": total_income,
+        "income_streams": income_streams,
+        "buckets": buckets,
+        "allocation_status": {
+            "state": "balanced",
+            "amount": 0.0,
+            "message": "Great — all allocated",
+        },
+    }
+
+
+async def get_budget(scope: str, month, *, user_id=None, household_id=None):
+    """Return the fully-assembled BudgetResponse dict for a (scope, owner, month), or None."""
+    month = _first_of_month(month)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        budget = await _fetch_budget_row(conn, scope, month, user_id, household_id)
+        if budget is None:
+            return None
+        streams = await conn.fetch(
+            "SELECT * FROM income_streams WHERE budget_id = $1 ORDER BY position, created_at",
+            budget["id"],
+        )
+        items = await conn.fetch(
+            "SELECT * FROM budget_line_items WHERE budget_id = $1 ORDER BY position, created_at",
+            budget["id"],
+        )
+    return _assemble_budget(budget, streams, items)

@@ -606,7 +606,7 @@ Ship this ASAP so the user can start using it.
     and `/api/dashboard` stub tests — a follow-up to fold into a later test task
     (e.g. Task 31).
 
-### Task 22 — Backend: current-month budget bootstrap (GET, auto-create + seed) (Size: M)
+### Task 22 — Backend: current-month budget bootstrap (GET, auto-create + seed) (Size: M) [x]
 - **Description**: The core read path. `GET /api/budget?month=YYYY-MM-01&scope=household`
   returns the caller's budget for that month + scope, creating it (with default goals
   50/20/30, currency from settings or `$`) on first access and seeding starter line
@@ -636,6 +636,31 @@ Ship this ASAP so the user can start using it.
     only by their `user_id`. 401 if unauthenticated; 403/404 if the caller is not a
     member (household) or not the owner (personal). `require_household` supplies the
     caller's `household_id` for the default household scope.
+- **Completed (2026-07-07)**: shipped through all quality phases — TDD (11 tests
+  written Red→Green; final test file has 13, adding 2 for the month-window clamp, all
+  passing), code review (Approve, 0 blocking), security scan (0 CRITICAL/HIGH; tenant
+  isolation verified structurally sound). Implementation:
+  `GET /api/budget?month=&scope=` with scope-branched auth (household →
+  membership-checked; personal → owner); `ensure_budget_for_month` (race-safe
+  `INSERT ... ON CONFLICT DO NOTHING RETURNING *` + seed in one transaction,
+  idempotent) and `get_budget` added to `database.py`; household budgets created with
+  `user_id = NULL` / personal with `household_id = NULL` per Task 20. Fixes applied
+  in-cycle: compute `total_income` by summing income streams (not hardcoded 0.0);
+  removed a dead `get_member_role` round-trip (membership already proven by
+  `get_household_by_user`'s JOIN); removed the previously-dead `require_household`; a
+  ±12-month clamp on `?month=` (422 outside window, the one MEDIUM finding fixed) to
+  prevent auto-create write amplification. The `BudgetResponse` scope invariant is now
+  enforced in the handler (closes the Task 21 deferred item). Dashboard compute fields
+  + real `allocation_status` remain zeroed, deferred to Task 25. E2E/regression: full
+  suite 160 passed / 23 failed — the 23 are the identical pre-existing stale
+  "Invoice Me" failures; zero new failures introduced.
+- **Deferred items surfaced during the cycle** (no new formal tasks — folded into
+  existing tasks):
+  - Real-row test coverage for `get_budget` / `_assemble_budget` (bucket assembly,
+    income summation, dashboard) → Task 25 (dashboard compute).
+  - Minor test gaps: seed-row per-field assertions (amount==0, bucket/label/position),
+    past-month clamp case, invalid-scope 422 → a later test-hardening task
+    (e.g. Task 31).
 
 ### Task 23 — Backend: income-stream CRUD (Size: S)
 - **Description**: CRUD for a month's income streams under its budget.
