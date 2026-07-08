@@ -13,10 +13,13 @@ def test_should_load_settings_with_default_cors_origins_when_env_vars_are_set(mo
     monkeypatch.setenv("RESEND_API_KEY", "test-key")
     monkeypatch.setenv("RESEND_FROM_EMAIL", "test@example.com")
     monkeypatch.delenv("ENVIRONMENT", raising=False)
+    # CORS_ORIGINS unset so we observe the code default, and ignore any .env file
+    # so the assertion is deterministic regardless of the local environment.
+    monkeypatch.delenv("CORS_ORIGINS", raising=False)
 
     # Act
     from config import Settings
-    settings = Settings()
+    settings = Settings(_env_file=None)
 
     # Assert
     assert settings.jwt_secret == "a-secret-that-is-at-least-32-characters-long"

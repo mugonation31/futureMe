@@ -616,3 +616,33 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 **Tags:** security, auth, api, backend
 
 ---
+
+## 2026-07-08 — Task 23: budget child-write ownership gating (same-statement predicate, positional-binding tests, stale Docker image, stale-test cleanup)
+
+**What happened:** The Task 21 lesson established that child-table queries (`income_streams`, `budget_line_items`) must JOIN back to `monthly_budgets` for tenant isolation. Task 23 (the child WRITE endpoints) took the next step: fold the ownership predicate into the SAME statement as the write — `INSERT ... SELECT ... WHERE <owned>`, `UPDATE ... FROM monthly_budgets WHERE <owned>`, `DELETE ... USING monthly_budgets WHERE <owned> RETURNING`. All three route through one centralised `_owned_budget_predicate` and return a `None` sentinel → 404 when the predicate excludes the row. This eliminates the check-then-act (TOCTOU) gap that a separate SELECT-then-write would leave open, and centralises the isolation rule in one place instead of per-endpoint.
+**Why:** A separate ownership SELECT followed by a write has a window where ownership can change (or a concurrent request interleaves) between the check and the act, and it also duplicates the predicate at every call site where it can drift. A single statement is atomic and has exactly one copy of the rule.
+**Next time:** For every budget child write in this project (Tasks 24/25/32), never SELECT-to-check then write. Use the same-statement form via `_owned_budget_predicate` (`INSERT…SELECT` / `UPDATE…FROM` / `DELETE…USING…RETURNING`) and map a `None` return to 404. This is the reference pattern — do not reintroduce a separate ownership fetch.
+**Tags:** security, database, idor, backend
+
+---
+
+**What happened:** The DB-layer tests for the child writes asserted only that certain substrings appeared in the generated SQL. A fake pool that returns a canned row regardless of the arguments it is passed satisfies every substring assertion — while a swapped positional parameter (e.g. `budget_id` and `label` bound to the wrong `$N`) silently breaks tenant isolation and the test stays green. The tests were strengthened to assert the actual argument-to-`$N` mapping.
+**Why:** Substring assertions verify the query TEXT, not the query's runtime BINDING. Tenant isolation depends entirely on the right value reaching the right placeholder, which a text-only assertion cannot see, and an argument-ignoring test double cannot expose.
+**Next time:** For any parameterised DB function whose correctness depends on which value reaches which placeholder, assert the positional `$N` binding (inspect the args the fake pool was called with), not just that the SQL contains the right keywords. A test double that ignores its arguments can only prove query shape — pair it with an explicit args assertion.
+**Tags:** testing, database, assertions, mocking
+
+---
+
+**What happened:** The Task 23 E2E run 404'd the entire new budget route prefix, which read as a code bug in the new endpoints. The cause was that the Dockerised backend was a ~3-week-stale image still serving a retired route layout — the running artifact predated the Task 21 retirement of the old feature layer and never contained the new prefix. Rebuilding (`docker compose up -d --build backend`) and confirming the running artifact matched HEAD cleared it.
+**Why:** This project's E2E runs against the Dockerised stack, whose image caches the app layer at build time. After multiple task cycles without a rebuild, the container can lag HEAD by weeks, so a "missing route" is the old artifact, not new code.
+**Next time:** On this project, before trusting any budget E2E result, rebuild the backend image (`docker compose up -d --build backend`) and confirm the running artifact matches HEAD (e.g. hit a route only present at HEAD, or check the image build time). A whole-prefix 404 after adding a new router is a staleness signal first, a code bug second. (Extends the existing "rebuild before E2E" lesson: here the container was weeks stale, not just one change behind.)
+**Tags:** e2e, docker, testing, process
+
+---
+
+**What happened:** This cycle finally deleted the 23 stale "Invoice Me" freelancer-domain tests (Client/Invoice/Schedule/`upsert_company_settings`) that had lingered as "known failures" across the Task 20/21/22 cycles. Carrying them as a green-minus-23 baseline meant every run required mentally filtering noise, and a genuine new regression could hide inside that band.
+**Why:** When a feature is retired, its tests were repeatedly deferred rather than deleted in the same change, so the suite accumulated failures for functions that never exist in the codebase, permanently degrading the signal of a clean run.
+**Next time:** On this project, when retiring a feature or router, delete its tests in the SAME change. Never bank failing tests as a "known-stale baseline" — a clean run must mean zero failures so real regressions are visible immediately.
+**Tags:** testing, tech-debt, regression, pytest
+
+---

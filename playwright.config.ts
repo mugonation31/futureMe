@@ -54,6 +54,23 @@ export default defineConfig({
       use: { baseURL: "http://localhost:8002" },
     },
     {
+      // Task 23 — income-stream CRUD API smoke tests (no browser).
+      // Covers POST/PATCH/DELETE /api/budget/{budget_id}/income:
+      // happy-path CRUD, validation (422), ownership isolation (404), and auth.
+      // Each test registers its own fresh user, so no seeded tokens are needed.
+      //
+      // REQUIRES: Docker Compose running with current backend code
+      //   (docker compose up -d --build). A stale pre-Task-23 image causes the
+      //   suite to skip automatically.
+      //
+      // Run only this project with:
+      //   npx playwright test --project=income-api
+      name: "income-api",
+      testDir: "./e2e/specs/smoke",
+      testMatch: ["**/income-api.spec.ts"],
+      use: { baseURL: "http://localhost:8002" },
+    },
+    {
       // SEC-4: CORS tightening API smoke tests (no browser).
       // Verifies preflight/simple-request CORS header behaviour using Node fetch.
       // Run with: npx playwright test --project=cors-api

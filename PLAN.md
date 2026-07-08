@@ -662,7 +662,7 @@ Ship this ASAP so the user can start using it.
     past-month clamp case, invalid-scope 422 → a later test-hardening task
     (e.g. Task 31).
 
-### Task 23 — Backend: income-stream CRUD (Size: S)
+### Task 23 — Backend: income-stream CRUD (Size: S) [x]
 - **Description**: CRUD for a month's income streams under its budget.
 - **Depends on**: Task 22
 - **Files**:
@@ -674,6 +674,27 @@ Ship this ASAP so the user can start using it.
     `PATCH .../income/{id}` updates label/amount; `DELETE .../income/{id}` removes it.
   - All operations verify the parent budget belongs to `ctx.user_id`; 403/404 if not.
   - Amounts `>= 0`; label sanitised. Total income is derivable as `SUM(amount)`.
+- **Completed (2026-07-08)**: shipped through all quality phases — TDD
+  (`test_task23_income_crud.py`, route + DB layers), code review (Approve, 0
+  blocking), security scan (0 CRITICAL/HIGH; tenant isolation verified sound),
+  E2E (`e2e/specs/smoke/income-api.spec.ts`, 9 API tests pass live). Implementation:
+  `POST/PATCH/DELETE /api/budget/{budget_id}/income[/{income_id}]` forwarding the
+  auth-context `user_id` (never the path `budget_id`); a single centralised
+  `_owned_budget_predicate(alias, budget_param, caller_param)` in `database.py`
+  (scope-branched — personal via `user_id`, household via `household_members`
+  subquery) reused by `create_income_stream` / `update_income_stream` /
+  `delete_income_stream`, each gating ownership **atomically in the same SQL
+  statement** (`INSERT…SELECT` / `UPDATE…FROM` / `DELETE…USING … RETURNING`) and
+  returning a `None` sentinel → 404 when not owned. Hardening folded in during the
+  cycle: `extra="forbid"` on `IncomeStreamCreate` (symmetry with the update model),
+  DB-layer tests assert positional `$N` binding (not just SQL substrings), empty
+  `{}` PATCH locked as a 200 no-op, and the 404 body asserted to leak no row data.
+- **Cross-cutting cleanup (same cycle)**: cleared the 23 pre-existing stale
+  "Invoice Me" test failures left over from the pre-pivot invoicing app — deleted
+  retired invoice/client/schedule/company-settings model tests, rewrote
+  `test_settings.py` to the real `UserSettingsResponse` API (fixing a raw-string
+  auth-override bug), and de-flaked a `.env`-polluted CORS config test. Backend
+  suite now fully green (184 passed, 0 stale failures).
 
 ### Task 24 — Backend: bucket line-item CRUD + goals/currency update (Size: M)
 - **Description**: CRUD for bucket line items, plus editing the three goal
