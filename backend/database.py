@@ -425,6 +425,99 @@ def _assemble_budget(budget_row, stream_rows, item_rows) -> Dict[str, Any]:
     }
 
 
+# ------------------------------------------------------------
+# Income streams — ownership-gated CRUD (Task 23)
+# ------------------------------------------------------------
+
+def _owned_budget_predicate(alias: str, budget_param: str, caller_param: str) -> str:
+    """Return the SQL predicate that is TRUE only when the budget row aliased
+    `alias` is owned by the caller (`caller_param` = the caller's user_id).
+
+    Ownership is the ONLY tenant-isolation control (deny-all RLS + BYPASSRLS
+    role), so this predicate MUST be evaluated in the SAME query as any read or
+    write — never split across a fetch-then-check. Centralised here and reused by
+    every income-stream mutation so the WHERE clause is never hand-rolled per
+    function. Branches on scope exactly like ``_fetch_budget_row``:
+      * personal  → owned when scope='personal' AND user_id = caller
+      * household → owned when scope='household' AND household_id is one of the
+                    caller's memberships (derived via the household_members
+                    subquery, so only the caller's user_id is needed).
+    """
+    return (
+        f"{alias}.id = {budget_param} AND ("
+        f"({alias}.scope = 'personal' AND {alias}.user_id = {caller_param}) OR "
+        f"({alias}.scope = 'household' AND {alias}.household_id IN "
+        f"(SELECT household_id FROM household_members WHERE user_id = {caller_param}))"
+        f")"
+    )
+
+
+async def create_income_stream(budget_id, caller_user_id, label, amount):
+    """Insert an income stream under `budget_id`, gated on caller ownership.
+
+    The INSERT ... SELECT ... WHERE <ownership predicate> means a budget the
+    caller does not own yields no row → return None so the route raises 404. The
+    position is computed (MAX+1) inside the same statement.
+    """
+    predicate = _owned_budget_predicate("b", "$1", "$2")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"""INSERT INTO income_streams (budget_id, label, amount, position)
+                SELECT b.id, $3, $4,
+                       COALESCE(
+                           (SELECT MAX(position) + 1 FROM income_streams
+                            WHERE budget_id = b.id), 0)
+                FROM monthly_budgets b
+                WHERE {predicate}
+                RETURNING *""",
+            budget_id, caller_user_id, label, amount,
+        )
+    return _serialize_row(row) if row is not None else None
+
+
+async def update_income_stream(budget_id, income_id, caller_user_id, *,
+                               label=None, amount=None):
+    """Update an income stream's label and/or amount, gated on caller ownership.
+
+    COALESCE keeps a column unchanged when its param is NULL (partial update).
+    A budget the caller does not own → no row → return None so the route 404s.
+    """
+    predicate = _owned_budget_predicate("b", "$1", "$3")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"""UPDATE income_streams s
+                SET label = COALESCE($4, s.label),
+                    amount = COALESCE($5, s.amount),
+                    updated_at = NOW()
+                FROM monthly_budgets b
+                WHERE s.id = $2 AND s.budget_id = b.id AND {predicate}
+                RETURNING s.*""",
+            budget_id, income_id, caller_user_id, label, amount,
+        )
+    return _serialize_row(row) if row is not None else None
+
+
+async def delete_income_stream(budget_id, income_id, caller_user_id):
+    """Delete an income stream, gated on caller ownership.
+
+    Returns the deleted id, or None when the budget is not owned (no row
+    deleted) so the route raises 404.
+    """
+    predicate = _owned_budget_predicate("b", "$1", "$3")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"""DELETE FROM income_streams s
+                USING monthly_budgets b
+                WHERE s.id = $2 AND s.budget_id = b.id AND {predicate}
+                RETURNING s.id""",
+            budget_id, income_id, caller_user_id,
+        )
+    return str(row["id"]) if row is not None else None
+
+
 async def get_budget(scope: str, month, *, user_id=None, household_id=None):
     """Return the fully-assembled BudgetResponse dict for a (scope, owner, month), or None."""
     month = _first_of_month(month)

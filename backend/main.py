@@ -1,7 +1,7 @@
 """
 FastAPI backend for futureMe app
 """
-from fastapi import FastAPI, Depends, HTTPException, Query, status
+from fastapi import FastAPI, Depends, HTTPException, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta, date as date_type
@@ -19,6 +19,7 @@ from models import (
     RefreshRequest, AccessTokenResponse,
     ForgotPasswordRequest, ResetPasswordRequest,
     BudgetResponse, BudgetScope,
+    IncomeStreamCreate, IncomeStreamUpdate, IncomeStreamResponse,
 )
 import database as db
 import email_service
@@ -318,6 +319,69 @@ async def get_budget(
     else:
         budget.user_id = None
     return budget
+
+
+# ============================================================
+# Income streams — CRUD under a parent budget (Task 23)
+# ============================================================
+#
+# Tenant isolation is enforced ENTIRELY in the database layer: each mutation
+# gates on caller ownership of the parent budget in the same SQL statement
+# (see database._owned_budget_predicate). The route never trusts the path
+# budget_id — it forwards the caller's own user_id and treats a None result
+# (not found / not owned) as a 404.
+
+
+@app.post(
+    "/api/budget/{budget_id}/income",
+    response_model=IncomeStreamResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_income_stream(
+    budget_id: str,
+    body: IncomeStreamCreate,
+    context: CurrentUserContext = Depends(get_current_user),
+):
+    row = await db.create_income_stream(
+        budget_id, context.user_id, body.label, body.amount
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    return row
+
+
+@app.patch(
+    "/api/budget/{budget_id}/income/{income_id}",
+    response_model=IncomeStreamResponse,
+)
+async def update_income_stream(
+    budget_id: str,
+    income_id: str,
+    body: IncomeStreamUpdate,
+    context: CurrentUserContext = Depends(get_current_user),
+):
+    row = await db.update_income_stream(
+        budget_id, income_id, context.user_id,
+        label=body.label, amount=body.amount,
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Income stream not found")
+    return row
+
+
+@app.delete(
+    "/api/budget/{budget_id}/income/{income_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_income_stream(
+    budget_id: str,
+    income_id: str,
+    context: CurrentUserContext = Depends(get_current_user),
+):
+    deleted = await db.delete_income_stream(budget_id, income_id, context.user_id)
+    if deleted is None:
+        raise HTTPException(status_code=404, detail="Income stream not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ============================================================

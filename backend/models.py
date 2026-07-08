@@ -166,6 +166,8 @@ BudgetScope = Literal["personal", "household"]
 
 
 class IncomeStreamCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     label: str = Field(..., min_length=1, max_length=200)
     amount: float = Field(..., ge=0)
 

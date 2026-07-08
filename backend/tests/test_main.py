@@ -21,7 +21,7 @@ async def test_should_return_api_running_message_on_get_root():
     # Assert
     assert response.status_code == 200
     data = response.json()
-    assert data["message"] == "Invoice Me API is running"
+    assert data["message"] == "futureMe API is running"
     assert "version" in data
 
 
