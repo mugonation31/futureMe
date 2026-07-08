@@ -364,21 +364,62 @@ async def ensure_budget_for_month(
     return _serialize_row(row)
 
 
-def _bucket_dashboard(bucket: str, goal_pct: float) -> Dict[str, Any]:
-    """Zeroed dashboard for a bucket (real compute lands in Task 25)."""
+# future_you is the only bucket where UNDER the goal is the "bad" (RED) case —
+# under-saving. For fundamentals and fun, OVER the goal (overspending) is RED.
+_UNDER_IS_OVER_BUCKETS = frozenset({"future_you"})
+
+
+def _bucket_dashboard(bucket: str, goal_pct: float, bucket_total: float,
+                      total_income: float) -> Dict[str, Any]:
+    """Compute one bucket's colour-flagged dashboard from live totals.
+
+    ``ideal_amount`` is the goal share of income; ``actual_pct`` is a 0-100
+    PERCENTAGE (same scale as ``goal_pct``), guarding against a zero income
+    (returns 0 rather than dividing by zero). All money + pct values are rounded
+    to 2 decimal places so consumers get clean numbers. ``is_over_flag`` is
+    ASYMMETRIC: fundamentals/fun flag RED when spending EXCEEDS the goal, while
+    future_you flags RED when it falls UNDER the goal (under-saving). At exact
+    equality (bucket_total == ideal_amount) the flag is False for all three,
+    which the strict > / < comparisons give for free.
+    """
+    ideal_amount = goal_pct / 100 * total_income
+    actual_pct = (bucket_total / total_income * 100) if total_income > 0 else 0.0
+    if bucket in _UNDER_IS_OVER_BUCKETS:
+        is_over_flag = bucket_total < ideal_amount
+    else:
+        is_over_flag = bucket_total > ideal_amount
     return {
         "bucket": bucket,
         "goal_pct": float(goal_pct),
-        "ideal_amount": 0.0,
-        "actual_pct": 0.0,
-        "bucket_total": 0.0,
-        "available_to_spend": 0.0,
-        "is_over_flag": False,
+        "ideal_amount": round(ideal_amount, 2),
+        "actual_pct": round(actual_pct, 2),
+        "bucket_total": round(bucket_total, 2),
+        "available_to_spend": round(ideal_amount - bucket_total, 2),
+        "is_over_flag": is_over_flag,
     }
 
 
+def _allocation_status(allocated: float, total_income: float) -> Dict[str, Any]:
+    """Compute the money-left-to-allocate state + amount from live totals.
+
+    Returns ONLY the machine-readable ``state`` and a 2-dp-rounded ``amount``.
+    The user-facing copy (currency-prefixed, localised) is built by the frontend
+    (Task 29) from state + amount + the budget's currency — the backend never
+    bakes a formatted display string.
+    """
+    if allocated < total_income:
+        return {"state": "left", "amount": round(total_income - allocated, 2)}
+    if allocated > total_income:
+        return {"state": "over", "amount": round(allocated - total_income, 2)}
+    return {"state": "balanced", "amount": 0.0}
+
+
 def _assemble_budget(budget_row, stream_rows, item_rows) -> Dict[str, Any]:
-    """Build the BudgetResponse-shaped dict from raw rows (compute fields zeroed)."""
+    """Build the BudgetResponse-shaped dict from raw rows, computing the dashboard.
+
+    Every field is recomputed from the live income streams + line items on each
+    call (nothing is stored), so the payload always reflects the current data.
+    """
     b = _serialize_row(budget_row)
     goals = {
         "fundamentals_goal_pct": float(b["fundamentals_goal_pct"]),
@@ -395,16 +436,20 @@ def _assemble_budget(budget_row, stream_rows, item_rows) -> Dict[str, Any]:
         d = _serialize_row(item)
         items_by_bucket.setdefault(d["bucket"], []).append(d)
 
-    buckets = {
-        bucket: {
-            "line_items": items_by_bucket.get(bucket, []),
-            "dashboard": _bucket_dashboard(bucket, goal_for[bucket]),
-        }
-        for bucket in _BUCKET_ORDER
-    }
-
     income_streams = [_serialize_row(s) for s in stream_rows]
     total_income = sum(float(s["amount"]) for s in income_streams)
+
+    buckets = {}
+    allocated = 0.0
+    for bucket in _BUCKET_ORDER:
+        items = items_by_bucket.get(bucket, [])
+        bucket_total = sum(float(i["amount"]) for i in items)
+        allocated += bucket_total
+        buckets[bucket] = {
+            "line_items": items,
+            "dashboard": _bucket_dashboard(
+                bucket, goal_for[bucket], bucket_total, total_income),
+        }
 
     return {
         "id": b["id"],
@@ -417,11 +462,7 @@ def _assemble_budget(budget_row, stream_rows, item_rows) -> Dict[str, Any]:
         "total_income": total_income,
         "income_streams": income_streams,
         "buckets": buckets,
-        "allocation_status": {
-            "state": "balanced",
-            "amount": 0.0,
-            "message": "Great — all allocated",
-        },
+        "allocation_status": _allocation_status(allocated, total_income),
     }
 
 

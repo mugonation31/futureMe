@@ -698,3 +698,33 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 **Tags:** testing, pytest, docker, ci
 
 ---
+
+## 2026-07-08 — Task 25: computed dashboard in the budget payload (scale, presentation, raw-vs-rounded, harness inputs)
+
+**What happened:** `_assemble_budget` returned `actual_pct` as a 0–1 fraction sitting on the same bucket object as `goal_pct`, which is on a 0–100 scale. Both fields end in `_pct`, so any consumer would reasonably assume a shared scale — a latent 100x contract bug even though nothing consumed `actual_pct` yet.
+**Why:** The two fields were computed in different places (goal from a stored user value, actual from a runtime division) and the naming convention was applied without cross-checking units against the sibling already on the object.
+**Next time:** When adding a field that shares a naming suffix with an existing field on the same object (`*_pct`, `*_amount`, `*_id`), match its scale/units to the existing sibling before committing. In this codebase, all `*_pct` fields are 0–100. A mismatch is a contract bug regardless of whether a consumer exists yet.
+**Tags:** api, backend, contract, correctness
+
+---
+
+**What happened:** The first dashboard implementation returned a fully-rendered `message` string ("You have £400.00 left to allocate") from the compute layer. It was replaced with a structured `{state, amount}` payload so the Angular frontend formats currency and copy.
+**Why:** Producing the friendly string in the backend felt helpful, but it baked currency-symbol placement and English into the data layer — coupling the API to i18n/locale concerns the frontend already owns (see the CurrencyPipe + settings-resolver work).
+**Next time:** The budget/dashboard read path must return structured data plus an enum/currency code, never pre-rendered display copy. If you find yourself concatenating a symbol, a number, and English words in `database.py` or a Pydantic response model, stop and return `{state, amount}` (or equivalent) instead.
+**Tags:** api, backend, i18n, separation-of-concerns
+
+---
+
+**What happened:** `is_over_flag` is an asymmetric business rule — for most buckets "over" means actual > ideal, but for the future_you bucket the flag is reversed (under-funding is the "bad" state). It was computed on the RAW bucket values BEFORE the returned amounts were rounded to 2dp, and the reversed set lives behind a named `_UNDER_IS_OVER_BUCKETS` frozenset.
+**Why:** If the flag were derived from the display-rounded amounts, 2dp rounding could flip a business decision at the boundary. And an inline `bucket == "future_you"` check for the reversed rule would be easy to miss when a new bucket is added.
+**Next time:** Compute boolean/business flags on raw pre-rounding values; round only the presentation copy afterwards. Keep asymmetric rules behind a named frozenset (`_UNDER_IS_OVER_BUCKETS`) so they are visible and safe when buckets change — mirror the existing `_ALLOWED_*_FIELDS` allowlist convention in this file.
+**Tags:** backend, correctness, business-logic, rounding
+
+---
+
+**What happened:** The dashboard math depended on `total_income`, but the in-memory test harness inherited from Task 24 hard-coded income streams to `[]`. `total_income` was therefore always 0, so the entire ideal/actual/available computation would have been exercised against zeroed inputs and proved nothing. Income had to be modelled as first-class state in the harness.
+**Why:** A harness reused from a prior task carries that task's stubbed inputs. The stub was fine for Task 24 (which didn't read income) but silently pinned the one input Task 25 depended on to a value that hides all the new logic.
+**Next time:** When reusing a test harness for a new feature, verify the harness actually varies every input the new logic reads before trusting a green run. Grep the harness for the fields your feature consumes (`income_streams`, `total_income`) and confirm they are non-trivially populated, not stubbed to empty/zero.
+**Tags:** testing, backend, test-fidelity, harness
+
+---

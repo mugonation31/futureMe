@@ -785,7 +785,22 @@ Ship this ASAP so the user can start using it.
     unchanged), not merely that the route returns 404.
   - Documentation covering prerequisites and the exact command to run the gated suite.
 
-### Task 25 — Backend: computed colour-flagged dashboard in the budget payload (Size: M)
+### Task 25 — Backend: computed colour-flagged dashboard in the budget payload (Size: M) [x]
+> **Completed (2026-07-08)**: shipped through all quality phases — TDD, code review (+ a
+> focused re-review of the contract change), security scan (clean), and an API E2E flow
+> (`test_task25_dashboard_e2e_flow.py`, 10 tests). Full suite 250 passed, 1 skipped.
+> Implemented in `database.py` `_assemble_budget` (`_bucket_dashboard` + `_allocation_status`
+> helpers); `models.py` shells from Task 21 already carried the fields.
+> **Two review-driven deviations from the acceptance criteria below:**
+> (1) `actual_pct` is emitted on a **0–100 percentage scale** (same as `goal_pct`), not the
+> `bucket_total/total_income` 0–1 fraction the criteria literally state — the fraction was a
+> latent 100× mismatch against its sibling field. All computed money/pct values are rounded
+> to 2 dp.
+> (2) **`allocation_status` no longer carries a `message` field** — it returns `{state, amount}`
+> only. The formatted, currency-prefixed English display string was removed from the compute
+> layer so the frontend (Task 26/29) builds the copy from `state` + `amount` + the budget-level
+> `currency`; this keeps i18n/locale out of the data layer. The asymmetric `is_over_flag` is
+> computed on RAW values before rounding, isolated behind a named `_UNDER_IS_OVER_BUCKETS` set.
 - **Description**: Make `BudgetResponse` carry the computed dashboard so the client
   renders a single source of truth (reusable later for reflections/snapshots).
 - **Depends on**: Task 23, Task 24

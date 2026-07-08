@@ -68,8 +68,7 @@ def sample_budget_payload(scope="household", user_id=None, household_id="hh-1",
             "future_you": {"line_items": [], "dashboard": dash("future_you", 20.0)},
             "fun": {"line_items": [], "dashboard": dash("fun", 30.0)},
         },
-        "allocation_status": {"state": "balanced", "amount": 0.0,
-                              "message": "Great — all allocated"},
+        "allocation_status": {"state": "balanced", "amount": 0.0},
     }
 
 

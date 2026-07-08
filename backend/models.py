@@ -322,10 +322,14 @@ class BudgetBuckets(BaseModel):
 
 
 class AllocationStatus(BaseModel):
-    """Whether the user has money left to allocate, is balanced, or over."""
+    """Whether the user has money left to allocate, is balanced, or over.
+
+    Carries only the machine-readable state + amount. The user-facing copy is
+    built by the frontend (Task 29) from state + amount + the budget currency —
+    the backend never bakes a formatted, localised display string.
+    """
     state: Literal["left", "balanced", "over"]
     amount: float
-    message: str
 
 
 class BudgetResponse(BaseModel):

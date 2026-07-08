@@ -255,6 +255,17 @@ def _bucket_view(bucket: str):
     )
 
 
+def test_allocation_status_has_no_message_field():
+    """AllocationStatus carries only state + amount; the display string is the
+    frontend's job (Task 29), so no 'message' field is serialised."""
+    from models import AllocationStatus
+
+    status = AllocationStatus(state="left", amount=400)
+
+    assert "message" not in status.model_dump()
+    assert not hasattr(status, "message")
+
+
 def test_budget_response_constructs_full_nested_payload():
     """should build the full BudgetResponse: goals + buckets + allocation_status + scope"""
     from models import (
@@ -283,7 +294,6 @@ def test_budget_response_constructs_full_nested_payload():
         allocation_status=AllocationStatus(
             state="left",
             amount=3000,
-            message="You have $3000 left to allocate",
         ),
     )
 
@@ -322,6 +332,6 @@ def test_budget_response_rejects_invalid_scope():
                 fun=_bucket_view("fun"),
             ),
             allocation_status=AllocationStatus(
-                state="balanced", amount=0, message="Great — all allocated",
+                state="balanced", amount=0,
             ),
         )
