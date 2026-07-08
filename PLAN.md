@@ -725,7 +725,19 @@ Ship this ASAP so the user can start using it.
   tolerance). **NOT yet committed** — the changes are uncommitted on branch
   `feat/task-23-income-stream-crud`.
 
-### Task 34 — Backend: gated Postgres integration harness proving SQL-level tenant isolation (Size: M) [ ]
+### Task 34 — Backend: gated Postgres integration harness proving SQL-level tenant isolation (Size: M) [x]
+> **Completed (2026-07-08)**: shipped through all quality phases — TDD (harness + 10 tests,
+> teeth proven by a reverted mutation check: 7/10 failed when `_owned_budget_predicate` was
+> weakened), code review (Approve, 0 blocking), security scan (clean, 0 CRITICAL/HIGH; one LOW
+> squashed by passing DB creds as connect kwargs), and E2E harness validation. Implementation:
+> `backend/tests/test_task34_pg_tenant_isolation_integration.py` (single gated module rather than
+> the predicted `integration/` dir), using **testcontainers-python** + `postgres:16-alpine`. Applies
+> all migrations (deliberately skipping the legacy Supabase-only `20260524000001_households.sql`
+> that Neon never ran), reproduces deny-all RLS + a NOSUPERUSER BYPASSRLS app role plus a
+> NOBYPASSRLS control role, seeds two tenants via the real `database.py` functions, and asserts
+> foreign-tenant INSERT/UPDATE/DELETE mutate ZERO rows at the SQL level. Gated behind
+> `RUN_INTEGRATION_TESTS=1`; default suite stays offline (220 passed, 1 skipped, no Docker).
+> `_owned_budget_predicate` is byte-for-byte unchanged.
 > **Positioned here (after Task 24, before Task 25) for priority, not numbered here.**
 > It carries the next available number (34) so the `Depends on` references of the
 > existing Tasks 25–33 are not disturbed by a renumber. Prioritised high — it de-risks

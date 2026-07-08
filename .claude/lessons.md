@@ -662,3 +662,39 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 **Tags:** security, testing, database, rls, idor
 
 ---
+
+## 2026-07-08 — Task 34: gated Postgres integration harness proving SQL-level tenant isolation
+
+**What happened:** Building the real-DB harness (testcontainers + `postgres:16-alpine`, all migrations applied, RLS on) surfaced that the isolation test could *pass for the wrong reason*: if the seeding/app role were a superuser or the table owner, Postgres lets it bypass RLS implicitly, so the test would go green without the ownership WHERE clause ever being exercised. The harness reproduces production's model with a NOSUPERUSER, non-owner, BYPASSRLS app role, plus a parallel NOBYPASSRLS control role that must see/mutate zero rows.
+**Why:** Postgres grants implicit RLS bypass to superusers and to a table's owner regardless of policies. Seed with either and "isolation passed" proves nothing — access wasn't attributable to the predicate. Only a NOSUPERUSER non-owner role reaching rows *solely* via BYPASSRLS, contrasted against a NOBYPASSRLS control, isolates the predicate as the thing under test.
+**Next time:** For any real-DB RLS/isolation test in this repo, seed and run assertions as a NOSUPERUSER role that does NOT own the tables, and keep the NOBYPASSRLS control role asserting zero foreign-row access. Never seed as superuser/owner — it silently hollows the proof. Extend cases in the Task 34 harness (gated behind `RUN_INTEGRATION_TESTS=1` / `@pytest.mark.integration`) rather than adding to the mocked-pool suite.
+**Tags:** security, rls, postgres, testing
+
+---
+
+## 2026-07-08 — Task 34: a security-proof test with no natural "red" must be shown to have teeth
+
+**What happened:** The isolation assertions passed on the very first run because the production predicate was already correct — meaning there was no TDD red phase to prove the test could ever fail. To rule out a tautological test, the ownership predicate was temporarily weakened; 7 of 10 assertions then failed, confirming the harness actually detects a broken WHERE clause.
+**Why:** A test that asserts "the bad thing can't happen" and passes immediately gives no evidence it would catch the bad thing — the predicate could be present-but-wrong, or the assertion could be checking nothing. Correct-on-first-run is indistinguishable from vacuous without a deliberate break.
+**Next time:** Whenever a security/isolation test passes on first write (no natural red), temporarily break the thing it guards (weaken the predicate, remove the owner filter) and confirm the test fails, then revert. Bake this into the review checklist for the Task 34 harness and any future negative-assertion test.
+**Tags:** testing, security, tdd
+
+---
+
+## 2026-07-08 — Task 34: migration-replay harness must replicate prod's deliberate omissions
+
+**What happened:** The harness applies migrations to build the test DB, but deliberately SKIPS the legacy Supabase-only migration `20260524000001_households.sql` — the same one production Neon never ran. Skipping it is not a workaround; it is what makes the test schema match production. Applying "all" migrations blindly would have produced a DB that diverges from prod.
+**Why:** "Apply every migration in the folder" assumes the folder equals production history. Here it doesn't — a Supabase-era migration was intentionally never applied on Neon. A replay harness that includes it tests a schema no environment actually runs.
+**Next time:** When building any migration-replay test DB for this repo, replay exactly what prod applied, including the known Supabase-only omissions (grep for `auth.` / Supabase-isms). Treat "which migrations did prod actually run" as an explicit input to the harness, not "everything in migrations/".
+**Tags:** database, migrations, testing, neon, supabase
+
+---
+
+## 2026-07-08 — Task 34: gate Docker-dependent tests at module import, not just per-test
+
+**What happened:** The default suite must stay offline with no Docker. Gating the integration tests with a per-test `skipif` still imports `testcontainers` at collection, which fails/slows without the dep. The fix was a module-level guard — `pytest.skip("...", allow_module_level=True)` before the `testcontainers` import when `RUN_INTEGRATION_TESTS` is unset — so the heavy deps are never imported. Confirmed by ~1.6s default runtime, no container start (220 passed, 1 skipped).
+**Why:** `@pytest.mark.skipif` and `skip()` inside a test still execute module-level imports during collection. For Docker/testcontainers deps that aren't installed or would start containers, collection itself is the cost you need to avoid.
+**Next time:** For any Docker/heavy-dep test file in this repo, put `if not os.getenv("RUN_INTEGRATION_TESTS"): pytest.skip(..., allow_module_level=True)` at the top BEFORE importing the heavy library, and keep the `@pytest.mark.integration` marker. Verify the default suite neither imports the dep nor starts a container.
+**Tags:** testing, pytest, docker, ci
+
+---
