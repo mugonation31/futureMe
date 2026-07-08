@@ -696,7 +696,7 @@ Ship this ASAP so the user can start using it.
   auth-override bug), and de-flaked a `.env`-polluted CORS config test. Backend
   suite now fully green (184 passed, 0 stale failures).
 
-### Task 24 — Backend: bucket line-item CRUD + goals/currency update (Size: M)
+### Task 24 — Backend: bucket line-item CRUD + goals/currency update (Size: M) [x]
 - **Description**: CRUD for bucket line items, plus editing the three goal
   percentages and the currency on the budget.
 - **Depends on**: Task 22
@@ -713,6 +713,65 @@ Ship this ASAP so the user can start using it.
     `future_you_goal_pct`, `fun_goal_pct` (each 0–100) and/or `currency`.
   - All operations verify the parent budget belongs to `ctx.user_id`; 403/404 if not.
   - `bucket` constrained to `fundamentals|future_you|fun`; amounts `>= 0`.
+- **Completed (2026-07-08)**: shipped through all quality phases — built via TDD (220
+  backend tests passing), code review (Approve, 0 blocking), security scan (clean, 0
+  CRITICAL/HIGH), and an API E2E flow. Implementation: four endpoints —
+  `POST/PATCH/DELETE /api/budget/{budget_id}/line-items[/{id}]` plus
+  `PATCH /api/budget/{budget_id}` (goals/currency). Ownership is gated via the shared
+  `_owned_budget_predicate` in single SQL statements, returning a `None` sentinel → 404
+  when not owned. Hardening folded in during the cycle: `extra="forbid"` added to
+  `LineItemCreate`; a bucket-move on PATCH re-tails `position` to the target bucket; and
+  `BudgetGoalsUpdate` enforces all-three-or-none goal pcts summing to 100 (with float
+  tolerance). **NOT yet committed** — the changes are uncommitted on branch
+  `feat/task-23-income-stream-crud`.
+
+### Task 34 — Backend: gated Postgres integration harness proving SQL-level tenant isolation (Size: M) [ ]
+> **Positioned here (after Task 24, before Task 25) for priority, not numbered here.**
+> It carries the next available number (34) so the `Depends on` references of the
+> existing Tasks 25–33 are not disturbed by a renumber. Prioritised high — it de-risks
+> the app's #1 threat — but it is **not** a blocker for Task 25's dashboard compute and
+> the two can proceed in parallel.
+- **Description**: Tenant isolation is enforced ONLY by SQL-level ownership gating
+  (`_owned_budget_predicate` in `backend/database.py`, lines ~432+), because RLS on the
+  three budget tables is deny-all and the app connects as a BYPASSRLS role. The entire
+  current suite mocks the DB boundary (`database.get_pool` is patched; `DATABASE_URL`
+  points at a never-connected localhost), and Task 24's E2E flow proves the ownership
+  *contract* in Python via an in-memory double — but NO test proves the production SQL
+  `WHERE` clauses actually mutate zero foreign rows against a live Postgres. A fake pool
+  cannot establish that guarantee. This task builds a **gated, opt-in** integration
+  harness that stands up a real ephemeral Postgres, reproduces the production security
+  model faithfully, and asserts the SQL mutates zero foreign-tenant rows.
+- **Depends on**: Task 24 (complete) — reuses its income-stream / line-item CRUD
+  endpoints and the Task 22 bootstrap as the surface under test. Independent of Task 25.
+- **Files**:
+  - `backend/tests/integration/test_tenant_isolation_sql.py` (new — the gated suite)
+  - `backend/tests/integration/conftest.py` (new — real asyncpg pool fixture, ephemeral
+    Postgres lifecycle, migration application, seed helpers)
+  - `backend/pytest.ini` (register the `integration` marker; keep it out of the default
+    `testpaths`/selection so the fast offline suite is unchanged)
+  - `backend/requirements.txt` (or a new `backend/requirements-dev.txt` — add
+    `testcontainers` / `pytest` marker deps if that option is chosen)
+  - optionally `docker-compose.test.yml` (if a docker-compose test service is the chosen
+    Postgres option instead of testcontainers / an ephemeral Neon branch)
+  - `backend/tests/integration/README.md` (how to run the gated suite)
+- **Acceptance criteria**:
+  - A gated integration suite (e.g. `@pytest.mark.integration`, opt-in via an env var
+    such as `RUN_INTEGRATION=1`) that does **not** run in the default fast/offline suite;
+    a normal `pytest` run neither collects nor requires a live DB.
+  - Stands up a real ephemeral Postgres — evaluate testcontainers-python, a
+    docker-compose test service, or an ephemeral Neon branch via the Neon MCP — and
+    applies every `migrations/migrations/*.sql` in filename order.
+  - Faithfully reproduces the production security model: deny-all RLS policies on the
+    budget tables AND a BYPASSRLS application role. This fidelity is the crux — if the
+    role/RLS setup is not replicated, the test proves nothing.
+  - Replaces the mocked `get_pool` with a real asyncpg pool fixture and seeds real data
+    (users → monthly_budgets → income_streams / budget_line_items) for two distinct
+    tenants.
+  - Replays the Task 24 cross-tenant flow and asserts **at the SQL level** that a foreign
+    tenant's INSERT / UPDATE / DELETE statements affect **ZERO** rows — verified against
+    the DB (e.g. `rowcount == 0` / `RETURNING` yields nothing and the target row is
+    unchanged), not merely that the route returns 404.
+  - Documentation covering prerequisites and the exact command to run the gated suite.
 
 ### Task 25 — Backend: computed colour-flagged dashboard in the budget payload (Size: M)
 - **Description**: Make `BudgetResponse` carry the computed dashboard so the client

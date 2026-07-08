@@ -1,7 +1,7 @@
 """
 Pydantic models for request/response validation
 """
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import Optional, Literal
 from datetime import datetime, date as date_type
 
@@ -207,6 +207,8 @@ class IncomeStreamResponse(BaseModel):
 
 
 class LineItemCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     bucket: BucketKey
     label: str = Field(..., min_length=1, max_length=200)
     amount: float = Field(..., ge=0)
@@ -265,6 +267,27 @@ class BudgetGoalsUpdate(BaseModel):
         if not v:
             raise ValueError("currency cannot be blank")
         return v
+
+    @model_validator(mode="after")
+    def validate_goal_pcts_sum_to_100(self):
+        """Enforce the 50/30/20 model with all-three-or-none semantics.
+
+        The three goal percentages are only meaningful as a complete set, so if
+        ANY is provided all three must be provided AND sum to exactly 100. A
+        currency-only update (no pct fields) and an empty {} no-op stay valid.
+        """
+        pcts = (self.fundamentals_goal_pct, self.future_you_goal_pct, self.fun_goal_pct)
+        provided = [p for p in pcts if p is not None]
+        if not provided:
+            return self  # currency-only or empty {} — no goal change to validate
+        if len(provided) != 3:
+            raise ValueError(
+                "all three goal percentages must be provided together "
+                "(fundamentals_goal_pct, future_you_goal_pct, fun_goal_pct)"
+            )
+        if abs(sum(provided) - 100) > 1e-9:
+            raise ValueError("goal percentages must sum to exactly 100")
+        return self
 
 
 class BudgetGoals(BaseModel):

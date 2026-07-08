@@ -20,6 +20,8 @@ from models import (
     ForgotPasswordRequest, ResetPasswordRequest,
     BudgetResponse, BudgetScope,
     IncomeStreamCreate, IncomeStreamUpdate, IncomeStreamResponse,
+    LineItemCreate, LineItemUpdate, LineItemResponse,
+    BudgetGoalsUpdate,
 )
 import database as db
 import email_service
@@ -253,6 +255,18 @@ async def get_dashboard(context: CurrentUserContext = Depends(get_current_user))
 _MAX_BUDGET_MONTHS_AWAY = 12
 
 
+def _budget_response_with_scope_invariant(data: dict) -> BudgetResponse:
+    """Validate an assembled budget dict and enforce the scope invariant:
+    personal budgets carry no household_id, household budgets carry no user_id.
+    """
+    budget = BudgetResponse.model_validate(data)
+    if budget.scope == "personal":
+        budget.household_id = None
+    else:
+        budget.user_id = None
+    return budget
+
+
 @app.get("/api/budget", response_model=BudgetResponse)
 async def get_budget(
     month: Optional[date_type] = Query(
@@ -313,12 +327,7 @@ async def get_budget(
         raise HTTPException(status_code=404, detail="Budget not found")
 
     # Guarantee the BudgetResponse scope invariant (Task 21 deferred item).
-    budget = BudgetResponse.model_validate(data)
-    if budget.scope == "personal":
-        budget.household_id = None
-    else:
-        budget.user_id = None
-    return budget
+    return _budget_response_with_scope_invariant(data)
 
 
 # ============================================================
@@ -382,6 +391,88 @@ async def delete_income_stream(
     if deleted is None:
         raise HTTPException(status_code=404, detail="Income stream not found")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ============================================================
+# Bucket line items + goals/currency — CRUD under a parent budget (Task 24)
+# ============================================================
+#
+# Same isolation contract as income streams: every mutation gates on caller
+# ownership of the parent budget in the SAME SQL statement (see
+# database._owned_budget_predicate). The route never trusts the path budget_id —
+# it forwards the caller's own user_id and treats a None result as a 404.
+
+
+@app.post(
+    "/api/budget/{budget_id}/line-items",
+    response_model=LineItemResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_line_item(
+    budget_id: str,
+    body: LineItemCreate,
+    context: CurrentUserContext = Depends(get_current_user),
+):
+    row = await db.create_line_item(
+        budget_id, context.user_id, body.bucket, body.label, body.amount
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    return row
+
+
+@app.patch(
+    "/api/budget/{budget_id}/line-items/{item_id}",
+    response_model=LineItemResponse,
+)
+async def update_line_item(
+    budget_id: str,
+    item_id: str,
+    body: LineItemUpdate,
+    context: CurrentUserContext = Depends(get_current_user),
+):
+    row = await db.update_line_item(
+        budget_id, item_id, context.user_id,
+        bucket=body.bucket, label=body.label, amount=body.amount,
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Line item not found")
+    return row
+
+
+@app.delete(
+    "/api/budget/{budget_id}/line-items/{item_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_line_item(
+    budget_id: str,
+    item_id: str,
+    context: CurrentUserContext = Depends(get_current_user),
+):
+    deleted = await db.delete_line_item(budget_id, item_id, context.user_id)
+    if deleted is None:
+        raise HTTPException(status_code=404, detail="Line item not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.patch("/api/budget/{budget_id}", response_model=BudgetResponse)
+async def update_budget_goals(
+    budget_id: str,
+    body: BudgetGoalsUpdate,
+    context: CurrentUserContext = Depends(get_current_user),
+):
+    data = await db.update_budget_goals(
+        budget_id, context.user_id,
+        fundamentals_goal_pct=body.fundamentals_goal_pct,
+        future_you_goal_pct=body.future_you_goal_pct,
+        fun_goal_pct=body.fun_goal_pct,
+        currency=body.currency,
+    )
+    if data is None:
+        raise HTTPException(status_code=404, detail="Budget not found")
+
+    # Guarantee the BudgetResponse scope invariant (mirrors GET /api/budget).
+    return _budget_response_with_scope_invariant(data)
 
 
 # ============================================================
