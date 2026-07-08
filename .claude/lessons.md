@@ -646,3 +646,19 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 **Tags:** testing, tech-debt, regression, pytest
 
 ---
+
+## 2026-07-08 — Task 24 bucket line-item CRUD: convention drift + a real-DB isolation blind spot
+
+**What happened:** `LineItemCreate` shipped without `extra="forbid"` while its three sibling budget models all had it, so a POST with a typo'd field name was silently accepted. Two things hid it: the `extra="forbid"` validation-contract convention was not applied uniformly across sibling models, and the test suite had a PATCH unknown-field rejection test but no POST equivalent, so the gap was invisible in green runs.
+**Why:** Conventions established on one model in this codebase (the budget request models) don't auto-propagate to new siblings, and negative tests written for one verb (PATCH) weren't mirrored to the parallel verb (POST) on the same resource.
+**Next time:** When adding a new request model under `models.py`, grep its sibling models for `extra="forbid"` and match them exactly. When a resource has both POST and PATCH, mirror every negative/validation test (unknown field, empty body, bad type) across both verbs — a passing PATCH rejection test says nothing about POST.
+**Tags:** validation, pydantic, testing, backend
+
+---
+
+**What happened:** The entire backend suite mocks the DB (`database.get_pool` patched; `DATABASE_URL` points at a never-connected localhost). Task 24's unit tests assert SQL *shape* (that `_owned_budget_predicate` is present and `$N` bindings are ordered) and the E2E flow proves the ownership *contract* via an in-memory Python double — but NO test proves the production SQL WHERE clause actually mutates zero foreign rows against a live Postgres with deny-all RLS + a BYPASSRLS role. This is a structural blind spot for the app's #1 risk (tenant isolation): a logically-wrong-but-syntactically-present predicate passes every existing test. Significant enough that Task 34 was added to close it with a gated real-DB integration harness.
+**Why:** Shape assertions and argument-recording test doubles can catch a missing predicate or a swapped `$N` binding, but they can't catch a predicate that is present, correctly bound, yet logically wrong — because nothing evaluates the SQL against real RLS. The mocked-pool architecture makes this blind spot invariant across every budget task, not a one-off.
+**Next time:** Treat the mocked-pool suite as proving query construction, never tenant isolation. For any owner-scoped write, the isolation guarantee needs the Task 34 gated integration harness (real Neon/Postgres, RLS on, cross-tenant fixture) — add/extend a case there rather than assuming green unit + E2E covers it. (Complements the existing "$N binding" lesson: binding assertions catch swaps; only the real DB catches a wrong-but-present WHERE.)
+**Tags:** security, testing, database, rls, idor
+
+---

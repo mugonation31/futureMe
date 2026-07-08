@@ -518,6 +518,130 @@ async def delete_income_stream(budget_id, income_id, caller_user_id):
     return str(row["id"]) if row is not None else None
 
 
+# ------------------------------------------------------------
+# Budget line items + goals/currency — ownership-gated CRUD (Task 24)
+# ------------------------------------------------------------
+
+async def create_line_item(budget_id, caller_user_id, bucket, label, amount):
+    """Insert a bucket line item under `budget_id`, gated on caller ownership.
+
+    Mirrors ``create_income_stream``: the INSERT ... SELECT ... WHERE <ownership
+    predicate> means a budget the caller does not own yields no row → return None
+    so the route raises 404. The position is computed (MAX+1) inside the same
+    statement, scoped per (budget_id, bucket) so each bucket has its own ordering.
+    """
+    predicate = _owned_budget_predicate("b", "$1", "$2")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"""INSERT INTO budget_line_items (budget_id, bucket, label, amount, position)
+                SELECT b.id, $3, $4, $5,
+                       COALESCE(
+                           (SELECT MAX(position) + 1 FROM budget_line_items
+                            WHERE budget_id = b.id AND bucket = $3), 0)
+                FROM monthly_budgets b
+                WHERE {predicate}
+                RETURNING *""",
+            budget_id, caller_user_id, bucket, label, amount,
+        )
+    return _serialize_row(row) if row is not None else None
+
+
+async def update_line_item(budget_id, item_id, caller_user_id, *,
+                           bucket=None, label=None, amount=None):
+    """Update a line item's bucket/label/amount, gated on caller ownership.
+
+    COALESCE keeps a column unchanged when its param is NULL (partial update); a
+    non-NULL ``bucket`` MOVES the item to another bucket. On a move the position
+    is re-tailed to ``MAX(position)+1`` of the TARGET bucket (so it doesn't keep
+    its stale source-bucket position and collide/leave a gap); a no-move (bucket
+    param NULL) leaves the position untouched. This is done in the SAME
+    ownership-gated statement — the item's own row still carries its source bucket
+    at recompute time, so the correlated MAX over the target bucket excludes it
+    and yields a correct tail-append. A budget the caller does not own → no row →
+    return None so the route 404s.
+    """
+    predicate = _owned_budget_predicate("b", "$1", "$3")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"""UPDATE budget_line_items s
+                SET bucket = COALESCE($4, s.bucket),
+                    label = COALESCE($5, s.label),
+                    amount = COALESCE($6, s.amount),
+                    position = CASE
+                        WHEN $4 IS NOT NULL THEN COALESCE(
+                            (SELECT MAX(li.position) + 1 FROM budget_line_items li
+                             WHERE li.budget_id = s.budget_id AND li.bucket = $4), 0)
+                        ELSE s.position
+                    END,
+                    updated_at = NOW()
+                FROM monthly_budgets b
+                WHERE s.id = $2 AND s.budget_id = b.id AND {predicate}
+                RETURNING s.*""",
+            budget_id, item_id, caller_user_id, bucket, label, amount,
+        )
+    return _serialize_row(row) if row is not None else None
+
+
+async def delete_line_item(budget_id, item_id, caller_user_id):
+    """Delete a line item, gated on caller ownership.
+
+    Returns the deleted id, or None when the budget is not owned (no row deleted)
+    so the route raises 404.
+    """
+    predicate = _owned_budget_predicate("b", "$1", "$3")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"""DELETE FROM budget_line_items s
+                USING monthly_budgets b
+                WHERE s.id = $2 AND s.budget_id = b.id AND {predicate}
+                RETURNING s.id""",
+            budget_id, item_id, caller_user_id,
+        )
+    return str(row["id"]) if row is not None else None
+
+
+async def update_budget_goals(budget_id, caller_user_id, *,
+                              fundamentals_goal_pct=None, future_you_goal_pct=None,
+                              fun_goal_pct=None, currency=None):
+    """Update a budget's goal percentages and/or currency, gated on caller ownership.
+
+    The ownership predicate applies directly to ``monthly_budgets`` (alias ``b``)
+    with a COALESCE partial-update, matching ``update_income_stream``. A budget
+    the caller does not own → no row → return None so the route 404s. On success
+    the fully-assembled BudgetResponse-shaped dict is returned (same shape as
+    ``get_budget``) so the route can echo the refreshed budget.
+    """
+    predicate = _owned_budget_predicate("b", "$1", "$2")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        budget = await conn.fetchrow(
+            f"""UPDATE monthly_budgets b
+                SET fundamentals_goal_pct = COALESCE($3, b.fundamentals_goal_pct),
+                    future_you_goal_pct = COALESCE($4, b.future_you_goal_pct),
+                    fun_goal_pct = COALESCE($5, b.fun_goal_pct),
+                    currency = COALESCE($6, b.currency),
+                    updated_at = NOW()
+                WHERE {predicate}
+                RETURNING b.*""",
+            budget_id, caller_user_id, fundamentals_goal_pct,
+            future_you_goal_pct, fun_goal_pct, currency,
+        )
+        if budget is None:
+            return None
+        streams = await conn.fetch(
+            "SELECT * FROM income_streams WHERE budget_id = $1 ORDER BY position, created_at",
+            budget["id"],
+        )
+        items = await conn.fetch(
+            "SELECT * FROM budget_line_items WHERE budget_id = $1 ORDER BY position, created_at",
+            budget["id"],
+        )
+    return _assemble_budget(budget, streams, items)
+
+
 async def get_budget(scope: str, month, *, user_id=None, household_id=None):
     """Return the fully-assembled BudgetResponse dict for a (scope, owner, month), or None."""
     month = _first_of_month(month)
