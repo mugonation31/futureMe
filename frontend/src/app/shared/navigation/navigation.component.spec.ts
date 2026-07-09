@@ -90,21 +90,39 @@ describe('NavigationComponent', () => {
     expect(component.menuOpen).toBeFalse();
   });
 
-  // Test 8: should display links for all 7 screens when authenticated (including Settings)
-  it('should display links for all 7 screens when authenticated (including Settings)', () => {
+  // Test 8: should display exactly Budget + Settings when authenticated (calm nav)
+  it('should display exactly Budget and Settings links when authenticated', () => {
     mockCurrentUser$.next({ id: '123', email: 'test@test.com', display_name: 'Test' });
     fixture.detectChanges();
 
     const navLinks = fixture.nativeElement.querySelectorAll('.nav-links a');
     const linkTexts = Array.from(navLinks).map((link: any) => link.textContent.trim());
 
-    expect(linkTexts).toContain('Home');
-    expect(linkTexts).toContain('Money Plan');
-    expect(linkTexts).toContain('Debts');
-    expect(linkTexts).toContain('Emergency Fund');
-    expect(linkTexts).toContain('Monthly Review');
-    expect(linkTexts).toContain('Opportunities');
-    expect(linkTexts).toContain('Settings');
+    expect(linkTexts).toEqual(['Budget', 'Settings']);
+  });
+
+  it('should point the Budget link at /budget', () => {
+    mockCurrentUser$.next({ id: '123', email: 'test@test.com', display_name: 'Test' });
+    fixture.detectChanges();
+
+    const budgetLink = fixture.nativeElement.querySelector('.nav-links a[routerLink="/budget"]');
+    expect(budgetLink).toBeTruthy();
+    expect(budgetLink.textContent.trim()).toBe('Budget');
+  });
+
+  it('should NOT display any of the retired money-era links when authenticated', () => {
+    mockCurrentUser$.next({ id: '123', email: 'test@test.com', display_name: 'Test' });
+    fixture.detectChanges();
+
+    const navLinks = fixture.nativeElement.querySelectorAll('.nav-links a');
+    const linkTexts = Array.from(navLinks).map((link: any) => link.textContent.trim());
+
+    expect(linkTexts).not.toContain('Home');
+    expect(linkTexts).not.toContain('Money Plan');
+    expect(linkTexts).not.toContain('Debts');
+    expect(linkTexts).not.toContain('Emergency Fund');
+    expect(linkTexts).not.toContain('Monthly Review');
+    expect(linkTexts).not.toContain('Opportunities');
   });
 
   // Test 9: should not display nav links when unauthenticated

@@ -856,7 +856,24 @@ Ship this ASAP so the user can start using it.
     interceptor pattern; `providedIn: 'root'`.
   - No remaining imports of `money.service` / `money.models` in the app.
 
-### Task 27 — Frontend: retire old feature screens + routes + calm nav (Size: M)
+### Task 27 — Frontend: retire old feature screens + routes + calm nav (Size: M) [x]
+> **Completed (2026-07-09)**: shipped through all quality phases — deletion+rewire (TDD:
+> specs updated to new contract first → 8-failure red → green), code review (found + fixed the
+> token-refresh e2e suite still depending on the deleted dashboard), security scan (clean —
+> route guards intact, no removed protection), and E2E (Playwright RUN for the first time, not
+> just compiled — Task 27's rewire validated live: token-refresh 13/13 via `/settings`,
+> `/dashboard`→`/budget` redirect, guarded `/budget`). **Also deleted (beyond the written list,
+> required for grep-zero):** the whole `dashboard/` folder (its `dashboard.service.ts` imported
+> `DashboardStats` from `money.models`) + `money.service.ts`/`money.models.ts` (+ specs) + the
+> money-era Playwright dashboard specs. **Created:** a minimal placeholder `budget/budget.component`
+> to resolve the `/budget` route (real screen is Task 28). Rewired the JWT-silent-refresh security
+> e2e suite from `/dashboard` onto `/settings` (`GET /api/settings` as the 401/refresh trigger),
+> preserving all invariants. Grep-zero for `money.service`/`money.models`; `ng build` exit 0; unit
+> suite 123 green. **Bonus:** running Playwright for the first time surfaced ~12 pre-existing
+> test-drift failures (stale selectors/copy across login/signup/settings/landing specs) — all
+> fixed here (test-only edits); every runnable e2e project green (env-gated onboarding/password-reset
+> happy-paths + the Task 33 budget-allocation selector legitimately deferred). Task 26's deferred
+> "no money.* imports" criterion is now SATISFIED.
 - **Description**: Delete the retired feature components and rewire routing/nav to the
   single Budget screen plus Settings, in the calm grey aesthetic.
 - **Depends on**: None (coordinate with Task 26)

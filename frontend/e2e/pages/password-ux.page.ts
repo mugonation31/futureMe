@@ -129,7 +129,9 @@ export class PasswordUxPage extends BasePage {
     super(page);
 
     // ── Login ────────────────────────────────────────────────────────────────
-    this.loginPasswordInput  = page.getByLabel('Password');
+    // `exact: true` prevents matching the "Show password" toggle button, whose
+    // aria-label ("Show password") otherwise also satisfies a substring match.
+    this.loginPasswordInput  = page.getByLabel('Password', { exact: true });
     this.loginPasswordToggle = page.locator('.password-wrapper .toggle-password');
     this.loginErrorMessage   = page.locator('.error-message');
     this.loginSubmitButton   = page.getByRole('button', { name: 'Login' });

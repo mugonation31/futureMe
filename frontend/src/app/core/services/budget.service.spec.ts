@@ -312,8 +312,7 @@ describe('BudgetService', () => {
     });
   });
 
-  // Test 13 — token-null yields an Observable error (not a synchronous throw),
-  // mirroring the old MoneyService contract.
+  // Test 13 — token-null yields an Observable error (not a synchronous throw).
   it('should return an Observable error (not throw synchronously) when token is null', (done: DoneFn) => {
     mockAuthService.getToken.and.returnValue(null);
 

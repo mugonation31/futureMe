@@ -22,7 +22,12 @@ import { BasePage } from './base.page';
  * Selector rationale
  * ------------------
  *  - `nav.navbar`                   — present only when authenticated (NavigationComponent *ngIf)
- *  - `.dashboard-container`         — top-level wrapper used as "dashboard loaded" sentinel
+ *  - `.settings-page`               — top-level wrapper on the kept /settings screen, used as
+ *                                     the "authenticated page loaded" sentinel. The /settings
+ *                                     screen fires an authenticated GET /api/settings on load,
+ *                                     which is what exercises the interceptor's silent-refresh
+ *                                     path (the money-era dashboard that used to do this was
+ *                                     retired in Task 27).
  *  - `.login-card`                  — stable BEM wrapper on the login form
  *  - `getByRole('button', 'Login')` — semantic submit-button selector
  *  - `getByLabel()`                 — preferred for form fields tied to <label> elements
@@ -40,9 +45,14 @@ export class TokenRefreshPage extends BasePage {
   readonly passwordInput: Locator;
   readonly loginButton: Locator;
 
-  // ── Dashboard locators ───────────────────────────────────────────────────
-  /** Top-level dashboard wrapper — used as the "reached dashboard" sentinel. */
-  readonly dashboardContainer: Locator;
+  // ── Authenticated-page locators ──────────────────────────────────────────
+  /**
+   * Top-level /settings wrapper — used as the "reached an authenticated screen"
+   * sentinel. The /settings route is a KEPT protected route that fires an
+   * authenticated GET /api/settings on load, so it is the trigger point for the
+   * interceptor's silent-refresh path (replacing the retired dashboard).
+   */
+  readonly settingsContainer: Locator;
 
   // ── Navigation locators ──────────────────────────────────────────────────
   /** Nav bar — present in DOM only when authenticated. */
@@ -55,9 +65,11 @@ export class TokenRefreshPage extends BasePage {
     super(page);
     this.loginCard          = page.locator('.login-card');
     this.emailInput         = page.getByLabel('Email');
-    this.passwordInput      = page.getByLabel('Password');
+    // `exact: true` prevents matching the "Show password" toggle button, whose
+    // aria-label ("Show password") otherwise also satisfies a substring match.
+    this.passwordInput      = page.getByLabel('Password', { exact: true });
     this.loginButton        = page.getByRole('button', { name: 'Login' });
-    this.dashboardContainer = page.locator('.dashboard-container');
+    this.settingsContainer  = page.locator('.settings-page');
     this.navbar             = page.locator('nav.navbar');
     this.logoutButton       = page.locator('nav.navbar button.logout-btn');
   }

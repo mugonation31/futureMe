@@ -15,7 +15,13 @@ import { TokenRefreshPage } from '../../pages/token-refresh.page';
  *     When the access token stored in localStorage is overwritten with an
  *     expired JWT and the backend returns 401 on the next API call, the
  *     AuthInterceptor calls POST /api/auth/refresh, retries the original
- *     request with the new access token, and the user remains on /dashboard.
+ *     request with the new access token, and the user remains on /settings.
+ *
+ *     NOTE: this suite was retargeted from the retired money-era /dashboard
+ *     screen onto the KEPT /settings screen in Task 27. /settings fires an
+ *     authenticated GET /api/settings on load (SettingsPageComponent.ngOnInit
+ *     → SettingsService.getSettings()), which is the API call made to return 401
+ *     so the interceptor's silent-refresh path is genuinely exercised.
  *
  *  3. Logout clears both tokens
  *     After the user clicks logout, neither fm_access_token nor
@@ -39,7 +45,7 @@ import { TokenRefreshPage } from '../../pages/token-refresh.page';
  * navigation.  The subject is populated by loadUserFromToken() at service
  * initialisation (app bootstrap).  This means:
  *
- *  - For the guard to allow access to /dashboard, the access token must be
+ *  - For the guard to allow access to /settings, the access token must be
  *    structurally valid and not yet expired at the time Angular bootstraps.
  *    We inject a far-future fake JWT via seedAuthToken() before the first
  *    navigation so the guard passes.
@@ -71,17 +77,9 @@ const MOCK_HOUSEHOLD = {
   invite_code: 'SEC1-CODE',
 };
 
-/** Minimal dashboard stats response. */
-const MOCK_DASHBOARD = {
-  total_budget: 1000,
-  total_spent: 200,
-  remaining_budget: 800,
-  savings_rate: 20,
-  category_breakdown: [],
-};
-
-/** Minimal settings response (satisfies currency pipe). */
+/** Minimal settings response (satisfies the /settings page load + currency pipe). */
 const MOCK_SETTINGS = {
+  display_name: 'SEC-1 User',
   currency: 'GBP',
   monthly_budget: 1000,
 };
@@ -112,7 +110,7 @@ const MOCK_LOGIN_RESPONSE = {
 
 /**
  * Boots the app at the base URL and injects a far-future access token so that
- * authGuard passes when navigating to /dashboard.  Also writes a matching
+ * authGuard passes when navigating to a protected route.  Also writes a matching
  * refresh token so that the full token pair is present in localStorage.
  *
  * After this helper the browser has:
@@ -129,24 +127,15 @@ async function seedBothTokens(page: Page, tPage: TokenRefreshPage): Promise<void
 }
 
 /**
- * Registers the standard household, dashboard, and settings mocks.
- * These are needed for householdGuard and the dashboard component to render
- * without erroring.
+ * Registers the standard household + settings mocks needed for householdGuard to
+ * pass and the /settings screen to render without erroring (200 GET /api/settings).
  */
-async function stubDashboardRoutes(page: Page): Promise<void> {
+async function stubSettingsRoutes(page: Page): Promise<void> {
   await page.route(`${apiUrl}/households/me`, route =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(MOCK_HOUSEHOLD),
-    })
-  );
-
-  await page.route(`${apiUrl}/dashboard`, route =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(MOCK_DASHBOARD),
     })
   );
 
@@ -202,7 +191,7 @@ test.describe('SEC-1 — Login stores both tokens', () => {
     await tPage.passwordInput.fill('password123');
     await tPage.loginButton.click();
 
-    // Wait for navigation away from /login (authGuard passes → /dashboard or /onboarding).
+    // Wait for navigation away from /login (authGuard passes → /budget or /onboarding).
     await page.waitForURL(url => !url.pathname.endsWith('/login'), { timeout: 15000 });
 
     // Assert fm_access_token is present and non-empty.
@@ -295,14 +284,15 @@ test.describe('SEC-1 — Silent refresh on expired access token', () => {
    *  1. App boots with a valid far-future access token → authGuard passes,
    *     householdGuard calls GET /api/households/me.
    *  2. We overwrite fm_access_token with an expired JWT while the app is live.
-   *  3. The next API call (GET /api/dashboard) is stubbed to return 401 on the
-   *     first attempt (simulating server-side token expiry) and 200 on retry.
+   *  3. The next API call (GET /api/settings, fired by SettingsPageComponent on
+   *     load) is stubbed to return 401 on the first attempt (simulating
+   *     server-side token expiry) and 200 on retry.
    *  4. The interceptor calls POST /api/auth/refresh → receives a new access
-   *     token → stores it → retries GET /api/dashboard → succeeds.
-   *  5. The user remains on /dashboard (no redirect to /login).
+   *     token → stores it → retries GET /api/settings → succeeds.
+   *  5. The user remains on /settings (no redirect to /login).
    *
    * The initial householdGuard call is stubbed to succeed immediately so the
-   * guard allows entry to /dashboard.  Only the dashboard data call (step 3)
+   * guard allows entry to /settings.  Only the settings data call (step 3)
    * is made to return 401, triggering the interceptor.
    *
    * Why this approach works
@@ -313,7 +303,7 @@ test.describe('SEC-1 — Silent refresh on expired access token', () => {
    * interceptor reads the raw localStorage value when attaching the Authorization
    * header, so the next HTTP request will carry the expired token and receive 401.
    */
-  test('user remains on /dashboard after the interceptor silently refreshes an expired access token', async ({ page }) => {
+  test('user remains on /settings after the interceptor silently refreshes an expired access token', async ({ page }) => {
     const tPage = new TokenRefreshPage(page);
 
     // Step 1: Boot the app with a valid token so authGuard passes.
@@ -337,7 +327,7 @@ test.describe('SEC-1 — Silent refresh on expired access token', () => {
     );
 
     // Step 3: Stub GET /api/households/me to always succeed
-    // (householdGuard must pass for /dashboard to be reachable).
+    // (householdGuard must pass for /settings to be reachable).
     await page.route(`${apiUrl}/households/me`, route =>
       route.fulfill({
         status: 200,
@@ -346,21 +336,14 @@ test.describe('SEC-1 — Silent refresh on expired access token', () => {
       })
     );
 
-    // Step 4: Stub GET /api/settings (needed by the currency pipe).
-    await page.route(`${apiUrl}/settings`, route =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(MOCK_SETTINGS),
-      })
-    );
-
-    // Step 5: Stub GET /api/dashboard to return 401 on the FIRST call and
-    // 200 on the second (retry after refresh).
-    let dashboardCallCount = 0;
-    await page.route(`${apiUrl}/dashboard`, route => {
-      dashboardCallCount += 1;
-      if (dashboardCallCount === 1) {
+    // Step 4: Stub GET /api/settings to return 401 on the FIRST call and 200 on
+    // the second (retry after refresh).  This is the authenticated API call the
+    // /settings screen fires on load, so it is what triggers the interceptor.
+    // Registered BEFORE navigation so the 401-once path fires deterministically.
+    let settingsCallCount = 0;
+    await page.route(`${apiUrl}/settings`, route => {
+      settingsCallCount += 1;
+      if (settingsCallCount === 1) {
         // First call — simulate expired access token on the server side.
         route.fulfill({ status: 401, contentType: 'application/json', body: '{"detail":"Token expired"}' });
       } else {
@@ -368,19 +351,19 @@ test.describe('SEC-1 — Silent refresh on expired access token', () => {
         route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify(MOCK_DASHBOARD),
+          body: JSON.stringify(MOCK_SETTINGS),
         });
       }
     });
 
-    // Step 6: Navigate to /dashboard.  At this point the in-memory token is
-    // valid (authGuard passes).  The dashboard component fires GET /api/dashboard
+    // Step 5: Navigate to /settings.  At this point the in-memory token is
+    // valid (authGuard passes).  The settings component fires GET /api/settings
     // which returns 401, triggering the interceptor.
-    await page.goto('/dashboard');
+    await page.goto('/settings');
 
-    // Step 7: The user must remain on /dashboard — no redirect to /login.
-    await expect(tPage.dashboardContainer).toBeVisible({ timeout: 15000 });
-    expect(page.url()).toContain('/dashboard');
+    // Step 6: The user must remain on /settings — no redirect to /login.
+    await expect(tPage.settingsContainer).toBeVisible({ timeout: 15000 });
+    expect(page.url()).toContain('/settings');
     expect(page.url()).not.toContain('/login');
   });
 
@@ -412,32 +395,24 @@ test.describe('SEC-1 — Silent refresh on expired access token', () => {
       })
     );
 
-    await page.route(`${apiUrl}/settings`, route =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(MOCK_SETTINGS),
-      })
-    );
-
-    let dashboardCallCount = 0;
-    await page.route(`${apiUrl}/dashboard`, route => {
-      dashboardCallCount += 1;
-      if (dashboardCallCount === 1) {
+    let settingsCallCount = 0;
+    await page.route(`${apiUrl}/settings`, route => {
+      settingsCallCount += 1;
+      if (settingsCallCount === 1) {
         route.fulfill({ status: 401, contentType: 'application/json', body: '{"detail":"Token expired"}' });
       } else {
         route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify(MOCK_DASHBOARD),
+          body: JSON.stringify(MOCK_SETTINGS),
         });
       }
     });
 
-    await page.goto('/dashboard');
+    await page.goto('/settings');
 
-    // Wait for the dashboard to fully render — this confirms the retry succeeded.
-    await expect(tPage.dashboardContainer).toBeVisible({ timeout: 15000 });
+    // Wait for the settings page to fully render — this confirms the retry succeeded.
+    await expect(tPage.settingsContainer).toBeVisible({ timeout: 15000 });
 
     // After the interceptor calls storeAccessToken(), localStorage must hold the
     // new token that the refresh endpoint returned.
@@ -472,30 +447,22 @@ test.describe('SEC-1 — Silent refresh on expired access token', () => {
       })
     );
 
-    await page.route(`${apiUrl}/settings`, route =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(MOCK_SETTINGS),
-      })
-    );
-
-    let dashboardCallCount = 0;
-    await page.route(`${apiUrl}/dashboard`, route => {
-      dashboardCallCount += 1;
-      if (dashboardCallCount === 1) {
+    let settingsCallCount = 0;
+    await page.route(`${apiUrl}/settings`, route => {
+      settingsCallCount += 1;
+      if (settingsCallCount === 1) {
         route.fulfill({ status: 401, contentType: 'application/json', body: '{"detail":"Token expired"}' });
       } else {
         route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify(MOCK_DASHBOARD),
+          body: JSON.stringify(MOCK_SETTINGS),
         });
       }
     });
 
-    await page.goto('/dashboard');
-    await expect(tPage.dashboardContainer).toBeVisible({ timeout: 15000 });
+    await page.goto('/settings');
+    await expect(tPage.settingsContainer).toBeVisible({ timeout: 15000 });
 
     // The interceptor must call refresh exactly once per 401, not in a loop.
     expect(refreshCallCount).toBe(1);
@@ -510,20 +477,20 @@ test.describe('SEC-1 — Logout clears both tokens', () => {
    *   AuthService.logout() removes fm_access_token and fm_refresh_token
    *   from localStorage and nulls currentUserSubject.
    *
-   * We seed both tokens, render the dashboard (nav bar visible → logout button
-   * accessible), click logout, and then assert that both keys are absent.
+   * We seed both tokens, render the /settings screen (nav bar visible → logout
+   * button accessible), click logout, and then assert that both keys are absent.
    */
   test('fm_access_token is removed from localStorage after logout', async ({ page }) => {
     const tPage = new TokenRefreshPage(page);
 
-    // Seed both tokens and stub API routes so /dashboard renders with nav bar.
+    // Seed both tokens and stub API routes so /settings renders with nav bar.
     await page.goto('/');
     await tPage.setAccessToken(tPage.buildValidFakeJwt({ email: 'sec1@example.com' }));
     await tPage.setRefreshToken('refresh-token-for-logout-test');
-    await stubDashboardRoutes(page);
+    await stubSettingsRoutes(page);
 
-    await page.goto('/dashboard');
-    await expect(tPage.dashboardContainer).toBeVisible({ timeout: 15000 });
+    await page.goto('/settings');
+    await expect(tPage.settingsContainer).toBeVisible({ timeout: 15000 });
 
     // The navbar must be present (user is authenticated) before clicking logout.
     await expect(tPage.navbar).toBeVisible();
@@ -543,10 +510,10 @@ test.describe('SEC-1 — Logout clears both tokens', () => {
     await page.goto('/');
     await tPage.setAccessToken(tPage.buildValidFakeJwt({ email: 'sec1@example.com' }));
     await tPage.setRefreshToken('refresh-token-for-logout-test');
-    await stubDashboardRoutes(page);
+    await stubSettingsRoutes(page);
 
-    await page.goto('/dashboard');
-    await expect(tPage.dashboardContainer).toBeVisible({ timeout: 15000 });
+    await page.goto('/settings');
+    await expect(tPage.settingsContainer).toBeVisible({ timeout: 15000 });
 
     await expect(tPage.navbar).toBeVisible();
     await tPage.logoutButton.click();
@@ -564,10 +531,10 @@ test.describe('SEC-1 — Logout clears both tokens', () => {
     await page.goto('/');
     await tPage.setAccessToken(tPage.buildValidFakeJwt({ email: 'sec1@example.com' }));
     await tPage.setRefreshToken('refresh-token-for-logout-test');
-    await stubDashboardRoutes(page);
+    await stubSettingsRoutes(page);
 
-    await page.goto('/dashboard');
-    await expect(tPage.dashboardContainer).toBeVisible({ timeout: 15000 });
+    await page.goto('/settings');
+    await expect(tPage.settingsContainer).toBeVisible({ timeout: 15000 });
 
     await expect(tPage.navbar).toBeVisible();
     await tPage.logoutButton.click();
@@ -590,7 +557,7 @@ test.describe('SEC-1 — Invalid refresh token triggers logout and redirect', ()
   /**
    * Scenario:
    *  1. App boots with a valid far-future access token → authGuard passes.
-   *  2. GET /api/dashboard returns 401 → interceptor fires.
+   *  2. GET /api/settings returns 401 → interceptor fires.
    *  3. POST /api/auth/refresh also returns 401 (invalid/expired refresh token).
    *  4. The interceptor's catchError calls authService.logout() + router.navigate(['/login']).
    *  5. User is redirected to /login.
@@ -625,17 +592,9 @@ test.describe('SEC-1 — Invalid refresh token triggers logout and redirect', ()
       })
     );
 
-    // GET /api/settings (currency pipe) — succeed so it doesn't interfere.
+    // GET /api/settings returns 401 → triggers the interceptor (this is the
+    // authenticated call the /settings screen fires on load).
     await page.route(`${apiUrl}/settings`, route =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(MOCK_SETTINGS),
-      })
-    );
-
-    // GET /api/dashboard returns 401 → triggers the interceptor.
-    await page.route(`${apiUrl}/dashboard`, route =>
       route.fulfill({
         status: 401,
         contentType: 'application/json',
@@ -643,8 +602,8 @@ test.describe('SEC-1 — Invalid refresh token triggers logout and redirect', ()
       })
     );
 
-    // Navigate to /dashboard — guard passes (in-memory token is valid).
-    await page.goto('/dashboard');
+    // Navigate to /settings — guard passes (in-memory token is valid).
+    await page.goto('/settings');
 
     // The failed refresh must cause a redirect to /login.
     await page.waitForURL(url => url.pathname.includes('/login'), { timeout: 15000 });
@@ -674,15 +633,8 @@ test.describe('SEC-1 — Invalid refresh token triggers logout and redirect', ()
       })
     );
 
+    // GET /api/settings returns 401 → triggers the interceptor.
     await page.route(`${apiUrl}/settings`, route =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(MOCK_SETTINGS),
-      })
-    );
-
-    await page.route(`${apiUrl}/dashboard`, route =>
       route.fulfill({
         status: 401,
         contentType: 'application/json',
@@ -690,7 +642,7 @@ test.describe('SEC-1 — Invalid refresh token triggers logout and redirect', ()
       })
     );
 
-    await page.goto('/dashboard');
+    await page.goto('/settings');
     await page.waitForURL(url => url.pathname.includes('/login'), { timeout: 15000 });
 
     // logout() removes both tokens — fm_access_token must be gone.
@@ -721,15 +673,8 @@ test.describe('SEC-1 — Invalid refresh token triggers logout and redirect', ()
       })
     );
 
+    // GET /api/settings returns 401 → triggers the interceptor.
     await page.route(`${apiUrl}/settings`, route =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(MOCK_SETTINGS),
-      })
-    );
-
-    await page.route(`${apiUrl}/dashboard`, route =>
       route.fulfill({
         status: 401,
         contentType: 'application/json',
@@ -737,7 +682,7 @@ test.describe('SEC-1 — Invalid refresh token triggers logout and redirect', ()
       })
     );
 
-    await page.goto('/dashboard');
+    await page.goto('/settings');
     await page.waitForURL(url => url.pathname.includes('/login'), { timeout: 15000 });
 
     // logout() removes both tokens — fm_refresh_token must be gone.
@@ -777,15 +722,8 @@ test.describe('SEC-1 — Invalid refresh token triggers logout and redirect', ()
       })
     );
 
+    // GET /api/settings returns 401 → triggers the interceptor.
     await page.route(`${apiUrl}/settings`, route =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(MOCK_SETTINGS),
-      })
-    );
-
-    await page.route(`${apiUrl}/dashboard`, route =>
       route.fulfill({
         status: 401,
         contentType: 'application/json',
@@ -793,7 +731,7 @@ test.describe('SEC-1 — Invalid refresh token triggers logout and redirect', ()
       })
     );
 
-    await page.goto('/dashboard');
+    await page.goto('/settings');
     await page.waitForURL(url => url.pathname.includes('/login'), { timeout: 15000 });
 
     // The refresh endpoint must have been called exactly once — no retry loop.

@@ -42,10 +42,10 @@ test.describe('Landing page — /', () => {
     const landing = new LandingPage(page);
     await landing.goto();
 
-    // The landing component renders an <h1> inside .hero.
-    // We assert visibility and that it contains the expected opening words.
+    // The landing component renders an <h1> inside .hero. Post-pivot copy is
+    // "One plan. Full control." (Intentional Spending Tracker).
     await expect(landing.heroHeadline).toBeVisible();
-    await expect(landing.heroHeadline).toContainText('Financial peace');
+    await expect(landing.heroHeadline).toContainText('One plan');
   });
 
   test('should render 3 feature cards', async ({ page }) => {
@@ -81,11 +81,10 @@ test.describe('Landing page — /', () => {
     const landing = new LandingPage(page);
     await landing.goto();
 
-    // styles.scss sets `.btn-primary { display: inline-block }` so the <a> tag
-    // renders as a button-shaped block rather than collapsing to zero width.
-    // We verify the computed display value is "inline-block".
+    // styles.scss renders `.btn-primary` as a button-shaped block (computed
+    // `display: block`) rather than collapsing to zero width.
     const display = await landing.getDisplayValue(landing.heroPrimaryBtn);
-    expect(display).toBe('inline-block');
+    expect(display).toBe('block');
   });
 });
 

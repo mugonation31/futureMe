@@ -11,9 +11,8 @@ import { BasePage } from './base.page';
  *  - `.subtitle`    — subtitle paragraph that contains the "Invoice Me" brand reference.
  *
  * Note on brand visibility:
- *  The login subtitle reads "Login to your Invoice Me account", which does NOT contain
- *  the "futureMe" brand string. The <title> of the document is "futureMe" and the
- *  footer brand span ".footer-brand" also shows "futureMe". Both are checked in the spec.
+ *  The login subtitle reads "Sign in to futureMe". The <title> of the document is
+ *  "futureMe" and the footer paragraph ".footer-copy" shows "© {year} futureMe".
  */
 export class LoginPage extends BasePage {
   readonly loginCard: Locator;
@@ -30,7 +29,9 @@ export class LoginPage extends BasePage {
     this.heading      = page.getByRole('heading', { name: 'Welcome Back' });
     this.subtitle     = page.locator('.subtitle');
     this.emailInput   = page.getByLabel('Email');
-    this.passwordInput = page.getByLabel('Password');
+    // `exact: true` prevents matching the "Show password" toggle button, whose
+    // aria-label ("Show password") otherwise also satisfies a substring match.
+    this.passwordInput = page.getByLabel('Password', { exact: true });
     this.submitButton = page.getByRole('button', { name: 'Login' });
     this.signupLink   = page.getByRole('link', { name: 'Sign up' });
   }

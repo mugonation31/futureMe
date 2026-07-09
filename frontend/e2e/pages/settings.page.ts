@@ -11,8 +11,8 @@ import { BasePage } from './base.page';
  *  - getByRole('heading')           — the H1 "Settings" heading; resilient to class changes.
  *  - getByLabel()                   — preferred for form fields; ties to the <label> element.
  *  - getByRole('button')            — matches submit buttons by their accessible name.
- *  - `.success-message`             — conditionally rendered success banner (task 28 / task 33).
- *  - `.error-message`               — conditionally rendered error banner.
+ *  - `.success-banner`              — conditionally rendered success banner (task 28).
+ *  - `.error-banner`                — conditionally rendered error banner.
  *  - `.settings-container`          — top-level wrapper; stable class used as loaded sentinel.
  *  - `app-budget-allocation`        — host element for the embedded BudgetAllocationComponent.
  *  - `.loading-message`             — shown while category + budget data loads (task 33).
@@ -78,9 +78,10 @@ export class SettingsPage extends BasePage {
     // Submit button — by accessible name (matches both "Save Settings" and "Saving...").
     this.saveButton         = page.getByRole('button', { name: /Save Settings|Saving/ });
 
-    // Banners
-    this.successMessage     = page.locator('.success-message');
-    this.errorMessage       = page.locator('.error-message');
+    // Banners — the settings-page template renders these as .success-banner /
+    // .error-banner (see settings-page.component.html).
+    this.successMessage     = page.locator('.success-banner');
+    this.errorMessage       = page.locator('.error-banner');
 
     // Budget allocation panel — scoped to the component host element.
     this.budgetPanel            = page.locator('app-budget-allocation');

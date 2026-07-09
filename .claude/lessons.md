@@ -737,3 +737,12 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 **Tags:** angular, auth, interceptor, frontend
 
 ---
+
+## 2026-07-09 — Playwright per-project baseURL env vars (Task 27 frontend retire)
+
+**What happened:** Running a Playwright project with the wrong baseURL env var produced a misleading wholesale "N failed / net::ERR_CONNECTION_REFUSED" that looked like the app was broken — it was just pointing at the wrong port. `playwright.config.ts` sets baseURL PER PROJECT from different env vars: most projects use `E2E_BASE_URL`, but the auth-pages project uses `AUTH_PAGES_BASE_URL`, each defaulting to a different port.
+**Why:** Playwright resolves `use.baseURL` independently per project config, so a single global env var does not cover every project. A wrong/missing var silently falls back to a default port that may not be serving the app under test.
+**Next time:** Before running a Playwright project, check which baseURL env var that specific project reads in `playwright.config.ts` and set it. Read a full-project connection-refused wipeout as "wrong baseURL / wrong port," not "broken app" — do not debug the app first.
+**Tags:** testing, e2e, playwright, config
+
+---

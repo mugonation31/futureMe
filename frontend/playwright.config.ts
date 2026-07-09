@@ -64,21 +64,9 @@ export default defineConfig({
       testMatch: ['**/smoke/auth-pages.spec.ts', '**/smoke/password-reset.spec.ts'],
     },
 
-    /**
-     * dashboard project
-     * -----------------
-     * Covers Tasks 27 (spending data / category breakdown) and 29 (currency pipe).
-     * All API calls are mocked via page.route() — no live backend required.
-     * The Angular dev server must be running on E2E_BASE_URL (default: 4201).
-     *
-     * Run only this project with:
-     *   npx playwright test --project=dashboard
-     */
-    {
-      name: 'dashboard',
-      use: { ...devices['Desktop Chrome'] },
-      testMatch: ['**/dashboard/dashboard.spec.ts'],
-    },
+    // NOTE: the 'dashboard' project was removed in Task 27 — the money-era
+    // dashboard screen (and its dashboard.spec.ts) was retired. The real
+    // spending header now lives inside the Budget screen (Tasks 28/29).
 
     /**
      * settings project
@@ -203,30 +191,9 @@ export default defineConfig({
       testMatch: ['**/settings/budget-allocation.spec.ts'],
     },
 
-    /**
-     * category-breakdown project (Task 34)
-     * ---------------------------------------
-     * Covers the "Spending by Category" section added in Task 34:
-     *
-     *   1. Category rows render — names and spent amounts visible
-     *   2. Progress bar fill width — [style.width.%] matches spent/budget ratio,
-     *      including 0% when budget is null or 0, and cap at 100%
-     *   3. over-budget class — applied when spent >= 90% of budget; absent otherwise
-     *   4. "No limit" text — shown when budget is null; formatted amount when set
-     *   5. Empty-state card — shown when category_breakdown is empty; hidden otherwise
-     *   6. No-household user — zeroed stats render without crash
-     *
-     * All API calls are mocked via page.route() — no live backend required.
-     * The Angular dev server must be running on E2E_BASE_URL (default: 4202).
-     *
-     * Run only this project with:
-     *   npx playwright test --project=category-breakdown
-     */
-    {
-      name: 'category-breakdown',
-      use: { ...devices['Desktop Chrome'] },
-      testMatch: ['**/dashboard/category-breakdown.spec.ts'],
-    },
+    // NOTE: the 'category-breakdown' project was removed in Task 27 — the
+    // money-era dashboard's "Spending by Category" section (and its
+    // category-breakdown.spec.ts) was retired along with the dashboard screen.
 
     /**
      * category-budgets project (Task 32)

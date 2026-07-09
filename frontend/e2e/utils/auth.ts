@@ -42,8 +42,9 @@ export async function loginAs(page: Page, email: string, password: string): Prom
   // Fill email — matched via <label for="display_name"> → id="email"
   await page.getByLabel('Email').fill(email);
 
-  // Fill password — matched via <label for="password"> → id="password"
-  await page.getByLabel('Password').fill(password);
+  // Fill password — matched via <label for="password"> → id="password".
+  // `exact: true` avoids also matching the "Show password" toggle button.
+  await page.getByLabel('Password', { exact: true }).fill(password);
 
   // Submit the form
   await page.getByRole('button', { name: 'Login' }).click();

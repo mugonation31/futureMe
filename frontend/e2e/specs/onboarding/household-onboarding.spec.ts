@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { OnboardingPage } from '../../pages/onboarding.page';
-import { DashboardPage } from '../../pages/dashboard.page';
+import { BudgetPage } from '../../pages/budget.page';
 import { loginAs, clearSession } from '../../utils/auth';
 
 /**
@@ -13,7 +13,7 @@ import { loginAs, clearSession } from '../../utils/auth';
  *    without requiring a live API (UI-only assertions against visible text
  *    and form controls).
  *
- * 2. Guard: unauthenticated access to /dashboard → redirect to /login.
+ * 2. Guard: unauthenticated access to /budget → redirect to /login.
  *    Does NOT require a live backend — the authGuard fires before any API
  *    call when there is no auth session in localStorage.
  *
@@ -40,7 +40,7 @@ import { loginAs, clearSession } from '../../utils/auth';
  * 7. Join household — inline error when API returns a non-2xx response
  *    (simulated via network route interception).
  *
- * 8. Guard: authenticated user with no household visiting /dashboard is
+ * 8. Guard: authenticated user with no household visiting /budget is
  *    redirected to /onboarding (simulated via route mocking).
  *
  * Environment variables (set in frontend/e2e/.env)
@@ -96,18 +96,18 @@ test.describe('Onboarding page — static rendering', () => {
 test.describe('Route guards — unauthenticated user', () => {
   // Each test runs in a clean context with no stored session.
 
-  test('visiting /dashboard without a session redirects to /login', async ({ page }) => {
-    await page.goto('/dashboard');
+  test('visiting /budget without a session redirects to /login', async ({ page }) => {
+    await page.goto('/budget');
 
     await page.waitForURL(url => url.pathname.includes('/login'), { timeout: 10000 });
     expect(page.url()).toContain('/login');
   });
 
   test('/login redirect preserves the originally requested URL as returnUrl', async ({ page }) => {
-    await page.goto('/dashboard');
+    await page.goto('/budget');
 
     await page.waitForURL(url => url.pathname.includes('/login'), { timeout: 10000 });
-    expect(page.url()).toContain('returnUrl=%2Fdashboard');
+    expect(page.url()).toContain('returnUrl=%2Fbudget');
   });
 
   test('visiting /settings without a session redirects to /login', async ({ page }) => {
@@ -342,7 +342,7 @@ test.describe('Join household — error handling (mocked API)', () => {
 // ─── 6. Household guard: authenticated user with no household → /onboarding ───
 
 test.describe('householdGuard — authenticated user with no household', () => {
-  test('visiting /dashboard when user has no household redirects to /onboarding', async ({ page }) => {
+  test('visiting /budget when user has no household redirects to /onboarding', async ({ page }) => {
     const email    = process.env['E2E_USER_NO_HOUSEHOLD_EMAIL'];
     const password = process.env['E2E_USER_NO_HOUSEHOLD_PASSWORD'];
 
@@ -360,8 +360,8 @@ test.describe('householdGuard — authenticated user with no household', () => {
     await loginAs(page, email, password);
 
     // After login the component checks /households/me, gets 404, and routes
-    // to /onboarding.  Navigate directly to /dashboard to exercise the guard.
-    await page.goto('/dashboard');
+    // to /onboarding.  Navigate directly to /budget to exercise the guard.
+    await page.goto('/budget');
 
     await page.waitForURL(url => url.pathname.includes('/onboarding'), { timeout: 15000 });
     expect(page.url()).toContain('/onboarding');
@@ -371,7 +371,7 @@ test.describe('householdGuard — authenticated user with no household', () => {
 // ─── 7. Create household — happy path (live backend required) ─────────────────
 
 test.describe('Create household — happy path (live backend)', () => {
-  test('creating a household redirects the user to /dashboard', async ({ page }) => {
+  test('creating a household redirects the user to /budget', async ({ page }) => {
     const email    = process.env['E2E_USER_NO_HOUSEHOLD_EMAIL'];
     const password = process.env['E2E_USER_NO_HOUSEHOLD_PASSWORD'];
 
@@ -381,9 +381,11 @@ test.describe('Create household — happy path (live backend)', () => {
     }
 
     // Do NOT stub households/me here — we want the real guard + real API.
-    // If this user already has a household the test will land on /dashboard
+    // If this user already has a household the test will land on /budget
     // immediately and the assertion will still pass, but the create flow
     // won't be exercised.  Provision a dedicated "no household" test account.
+    // Note: components still navigate(['/dashboard']); the router aliases that
+    // to /budget via a pathMatch:'full' redirect (Task 27).
 
     await loginAs(page, email, password);
 
@@ -395,23 +397,23 @@ test.describe('Create household — happy path (live backend)', () => {
       const uniqueName = `E2E Household ${Date.now()}`;
       await onboarding.createHousehold(uniqueName);
 
-      await page.waitForURL(url => url.pathname.includes('/dashboard'), { timeout: 20000 });
+      await page.waitForURL(url => url.pathname.includes('/budget'), { timeout: 20000 });
     }
 
-    // Either we arrived on /dashboard via the create flow, or the user already
+    // Either we arrived on /budget via the create flow, or the user already
     // had a household and was redirected there by login.  Either way we must
-    // be on /dashboard.
-    expect(page.url()).toContain('/dashboard');
+    // be on /budget.
+    expect(page.url()).toContain('/budget');
 
-    const dashboard = new DashboardPage(page);
-    await expect(dashboard.heading).toBeVisible();
+    const budget = new BudgetPage(page);
+    await expect(budget.heading).toBeVisible();
   });
 });
 
 // ─── 8. Join household by invite code — happy path (live backend required) ────
 
 test.describe('Join household by invite code — happy path (live backend)', () => {
-  test('joining with a valid invite code redirects the user to /dashboard', async ({ page }) => {
+  test('joining with a valid invite code redirects the user to /budget', async ({ page }) => {
     const email      = process.env['E2E_USER_JOIN_EMAIL'];
     const password   = process.env['E2E_USER_JOIN_PASSWORD'];
     const inviteCode = process.env['E2E_INVITE_CODE'];
@@ -438,18 +440,18 @@ test.describe('Join household by invite code — happy path (live backend)', () 
     const onboarding = new OnboardingPage(page);
     await onboarding.joinHousehold(inviteCode);
 
-    await page.waitForURL(url => url.pathname.includes('/dashboard'), { timeout: 20000 });
-    expect(page.url()).toContain('/dashboard');
+    await page.waitForURL(url => url.pathname.includes('/budget'), { timeout: 20000 });
+    expect(page.url()).toContain('/budget');
 
-    const dashboard = new DashboardPage(page);
-    await expect(dashboard.heading).toBeVisible();
+    const budget = new BudgetPage(page);
+    await expect(budget.heading).toBeVisible();
   });
 });
 
-// ─── 9. Post-login routing: user with existing household goes to /dashboard ───
+// ─── 9. Post-login routing: user with existing household goes to /budget ──────
 
 test.describe('Login routing — user with an existing household', () => {
-  test('logging in with a user that has a household lands on /dashboard', async ({ page }) => {
+  test('logging in with a user that has a household lands on /budget', async ({ page }) => {
     const email    = process.env['E2E_USER_WITH_HOUSEHOLD_EMAIL'];
     const password = process.env['E2E_USER_WITH_HOUSEHOLD_PASSWORD'];
 
@@ -463,10 +465,10 @@ test.describe('Login routing — user with an existing household', () => {
 
     await loginAs(page, email, password);
 
-    await page.waitForURL(url => url.pathname.includes('/dashboard'), { timeout: 20000 });
-    expect(page.url()).toContain('/dashboard');
+    await page.waitForURL(url => url.pathname.includes('/budget'), { timeout: 20000 });
+    expect(page.url()).toContain('/budget');
 
-    const dashboard = new DashboardPage(page);
-    await expect(dashboard.heading).toBeVisible();
+    const budget = new BudgetPage(page);
+    await expect(budget.heading).toBeVisible();
   });
 });

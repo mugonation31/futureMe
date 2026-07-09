@@ -36,8 +36,8 @@ describe('App Routes', () => {
   });
 
   // Test 4: core app routes exist
-  it('should have a dashboard route', () => {
-    const route = routes.find(r => r.path === 'dashboard');
+  it('should have a budget route', () => {
+    const route = routes.find(r => r.path === 'budget');
     expect(route).toBeTruthy();
   });
 
@@ -51,9 +51,21 @@ describe('App Routes', () => {
     expect(route).toBeTruthy();
   });
 
-  // Test 5: authGuard on protected routes
-  it('should have authGuard on dashboard route', () => {
+  // Test 4b: dashboard is now a redirect to budget (legacy navigate(['/dashboard']))
+  it('should redirect the legacy dashboard route to budget', () => {
     const route = routes.find(r => r.path === 'dashboard');
+    expect(route).toBeTruthy();
+    expect(route?.redirectTo).toBe('budget');
+  });
+
+  it('should NOT have canActivate guards on the dashboard redirect route', () => {
+    const route = routes.find(r => r.path === 'dashboard');
+    expect(route?.canActivate).toBeFalsy();
+  });
+
+  // Test 5: authGuard on protected routes
+  it('should have authGuard on budget route', () => {
+    const route = routes.find(r => r.path === 'budget');
     expect(route?.canActivate).toContain(authGuard);
   });
 
@@ -68,8 +80,8 @@ describe('App Routes', () => {
   });
 
   // Test 6: householdGuard on guarded routes
-  it('should have householdGuard on dashboard route', () => {
-    const route = routes.find(r => r.path === 'dashboard');
+  it('should have householdGuard on budget route', () => {
+    const route = routes.find(r => r.path === 'budget');
     expect(route?.canActivate).toContain(householdGuard);
   });
 

@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test';
 import { SettingsPage } from '../../pages/settings.page';
-import { DashboardPage } from '../../pages/dashboard.page';
 import { seedAuthToken, buildFakeJwt, clearSession } from '../../utils/auth';
 
 /**
@@ -20,7 +19,9 @@ import { seedAuthToken, buildFakeJwt, clearSession } from '../../utils/auth';
  * 1. Static rendering — the /settings page renders all fields
  * 2. Success message auto-dismiss — disappears after ~3 s (task 28)
  * 3. Blank display_name — does not overwrite the existing value (task 28)
- * 4. Currency change — dashboard reflects new prefix on next visit (task 29)
+ * 4. (RETIRED) Currency-change-reflected-on-dashboard — the money-era dashboard
+ *    was removed in Task 27; this group is now a retired-note placeholder only.
+ * 5. Auth guard — visiting /settings without a JWT redirects to /login
  *
  * Port: 4202 (configured in frontend/e2e/.env → E2E_BASE_URL).
  */
@@ -284,106 +285,12 @@ test.describe('Settings — blank display_name handling (task 28)', () => {
   });
 });
 
-// ─── 4. Currency change reflected on Dashboard (task 29) ─────────────────────
-
-test.describe('Settings — currency change reflected on Dashboard (task 29)', () => {
-  test('changing currency to USD — settings are persisted and dashboard reflects the correct numeric values', async ({ page }) => {
-    /**
-     * Task 29: "Changing currency to USD in settings causes the dashboard to
-     * show $ prefix on next visit."
-     *
-     * Design note: CurrencyFormatPipe is a pure pipe with a GBP default.  It
-     * subscribes to SettingsService.getSettings() in its constructor; however,
-     * because Angular only re-invokes a pure pipe's transform() when the *input*
-     * value changes, the currency symbol shown on first render is the GBP default
-     * regardless of what /settings returns.  As a result, asserting "$" on the
-     * *initial* dashboard render cannot be done deterministically without
-     * either making the pipe impure or using a route resolver.
-     *
-     * This test therefore verifies:
-     *   (a) The PUT /settings request includes the updated currency value.
-     *   (b) A fresh GET /settings (after cache invalidation) returns the new value.
-     *   (c) The dashboard loads successfully and displays the correct *numeric*
-     *       amounts — the symbol will be whichever one Angular renders first.
-     *
-     * A separate note for the task implementation team: making the pipe impure
-     * (`pure: false` in the @Pipe decorator) would allow the symbol to update
-     * mid-render and would make the "$ on next visit" requirement fully testable.
-     */
-    await stubAuth(page);
-
-    let currentCurrency = 'GBP';
-    let receivedPutBody: Record<string, unknown> = {};
-
-    await page.route(`${apiUrl}/settings`, async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            display_name: 'Alice',
-            currency: currentCurrency,
-            monthly_budget: 1000,
-          }),
-        });
-        return;
-      }
-
-      if (route.request().method() === 'PUT') {
-        receivedPutBody = JSON.parse(route.request().postData() ?? '{}');
-        if (receivedPutBody['currency']) {
-          currentCurrency = receivedPutBody['currency'] as string;
-        }
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ display_name: 'Alice', currency: currentCurrency, monthly_budget: 1000 }),
-        });
-        return;
-      }
-
-      await route.continue();
-    });
-
-    await page.route(`${apiUrl}/dashboard`, route =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          total_budget: 1000,
-          total_spent: 400,
-          remaining_budget: 600,
-          savings_rate: 40,
-          category_breakdown: [{ category_name: 'Groceries', spent: 400 }],
-        }),
-      })
-    );
-
-    // Step 1: Visit settings and change currency to USD.
-    const settings = new SettingsPage(page);
-    await settings.goto();
-
-    await settings.saveSettings({ currency: 'USD' });
-    await expect(settings.successMessage).toBeVisible({ timeout: 5000 });
-
-    // (a) Verify the PUT payload included the correct currency.
-    expect(receivedPutBody['currency']).toBe('USD');
-
-    // Step 2: Navigate to dashboard.
-    const dashboard = new DashboardPage(page);
-    await dashboard.goto();
-
-    await expect(dashboard.dashboardContent).toBeVisible();
-
-    // (b) Verify the settings cache was invalidated and the new currency was
-    //     picked up (currentCurrency is now 'USD' from the intercepted response).
-    expect(currentCurrency).toBe('USD');
-
-    // (c) Verify the dashboard displays the correct numeric amount.
-    // The symbol depends on Angular's pure-pipe rendering cycle.
-    await expect(dashboard.categorySpent(0)).toHaveText(/400\.00/, { timeout: 5000 });
-  });
-});
+// ─── 4. Currency change reflected on Dashboard (task 29) — RETIRED ───────────
+//
+// The money-era dashboard was removed in Task 27 (retired feature layer). The
+// currency-on-dashboard reflection test that lived here is gone with it; the
+// real spending header is rebuilt inside the Budget screen (Tasks 28/29) and
+// will get its own coverage there.
 
 // ─── 5. Auth guard ────────────────────────────────────────────────────────────
 

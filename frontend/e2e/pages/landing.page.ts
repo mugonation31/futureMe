@@ -52,7 +52,7 @@ export class LandingPage extends BasePage {
   constructor(page: Page) {
     super(page);
 
-    // The hero headline text is "Financial peace, one month at a time."
+    // The hero headline text is "One plan. Full control." (post-pivot copy).
     // We match by partial text via getByRole to stay resilient to minor copy edits.
     this.heroHeadline   = page.getByRole('heading', { level: 1 });
 
@@ -76,7 +76,7 @@ export class LandingPage extends BasePage {
 
   /**
    * Returns the computed `display` value of the element identified by the
-   * given locator. Useful for verifying that `display: inline-block` is
+   * given locator. Useful for verifying that `display: block` is
    * applied to the CTA buttons.
    */
   async getDisplayValue(locator: Locator): Promise<string> {

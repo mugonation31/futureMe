@@ -18,8 +18,9 @@
 
 .nav-brand .brand-name {
   font-size: 1.125rem;
-  font-weight: 700;
-  color: var(--accent);
+  font-weight: 600;
+  // Calm, grey, minimal tone — neutral text instead of the loud accent green.
+  color: var(--text-primary);
   letter-spacing: -0.02em;
   text-decoration: none;
 }

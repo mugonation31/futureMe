@@ -81,14 +81,14 @@ test.describe('App shell — smoke tests', () => {
   // ─── 5. futureMe brand visible on the login page ────────────────────────────
 
   test('futureMe brand is visible on the login page', async ({ page }) => {
-    const loginPage = new LoginPage(page);
-    await loginPage.goto();
+    const shell = new AppShellPage(page);
+    await shell.goto('/login');
 
-    // The FooterComponent always renders a .footer-brand span with text "futureMe".
-    // This span is part of the persistent shell layout, present on every route.
-    const footerBrand = page.locator('.footer-brand');
-    await expect(footerBrand).toBeVisible();
-    await expect(footerBrand).toHaveText('futureMe');
+    // The FooterComponent always renders a .footer-copy paragraph reading
+    // "© {year} futureMe". This is part of the persistent shell layout,
+    // present on every route.
+    await expect(shell.footerBrand).toBeVisible();
+    await expect(shell.footerBrand).toContainText('futureMe');
   });
 
   test('the document title advertises the futureMe brand on the login page', async ({ page }) => {
@@ -108,11 +108,14 @@ test.describe('App shell — smoke tests', () => {
     await expect(signupPage.heading).toBeVisible();
   });
 
-  test('signup page renders all four form fields', async ({ page }) => {
+  test('signup page renders all form fields', async ({ page }) => {
     const signupPage = new SignupPage(page);
     await signupPage.goto();
 
-    await expect(signupPage.nameInput).toBeVisible();
+    // The signup form splits the old single "Full Name" field into separate
+    // "First Name" and "Last Name" inputs (plus email, password, confirm).
+    await expect(signupPage.firstNameInput).toBeVisible();
+    await expect(signupPage.lastNameInput).toBeVisible();
     await expect(signupPage.emailInput).toBeVisible();
     await expect(signupPage.passwordInput).toBeVisible();
     await expect(signupPage.confirmPasswordInput).toBeVisible();
