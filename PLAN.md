@@ -823,7 +823,23 @@ Ship this ASAP so the user can start using it.
     {cur}{amount}"`.
   - Values recompute on every `GET /api/budget` from live income + line items.
 
-### Task 26 — Frontend: budget models + BudgetService (Size: S)
+### Task 26 — Frontend: budget models + BudgetService (Size: S) [x]
+> **Completed (2026-07-09)**: shipped through all quality phases — TDD (13 HttpTestingController
+> specs), code review (Approve; typed the `updateCurrency` body), security scan (clean;
+> added `encodeURIComponent` on path ids + a `CurrencyCode` write-path union), and E2E
+> validation (Playwright correctly skipped — no UI consumer yet). Full frontend suite 195
+> passed, `ng build` exit 0.
+> **Scope deviation (agreed):** this slice was done **ADDITIVE-ONLY** — the new
+> `budget.models.ts` + `budget.service.ts` (+ spec) were created, but the old
+> `money.models.ts`/`money.service.ts` and their consuming screens were LEFT in place to keep
+> `ng build` green between slices. Therefore the **"no remaining imports of money.service/
+> money.models" acceptance criterion is DEFERRED to Task 27** (which deletes the consuming
+> screens). The `delete money.*` file action below also moves to Task 27.
+> **Contract notes:** models mirror the payload in snake_case (Angular HttpClient does no case
+> transform); `AllocationStatus` has no `message`; `actual_pct` is 0–100. Auth header is attached
+> MANUALLY via `getHeaders()` (the `authInterceptor` only does 401→refresh→retry, it does NOT
+> attach the bearer on initial requests). `getBudget` sends `scope` (default `household`) always
+> and `month` (normalised to `YYYY-MM-01`) only when provided.
 - **Description**: Replace the old money models/service with typed interfaces and a
   service for the new API.
 - **Depends on**: Task 22 (API contract known)

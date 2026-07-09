@@ -728,3 +728,12 @@ Lessons learned in this project. Reviewed at the start of relevant sessions.
 **Tags:** testing, backend, test-fidelity, harness
 
 ---
+
+## 2026-07-08 — Task 26: `authInterceptor` does NOT attach the Authorization header — services must attach it manually
+
+**What happened:** Building the new `BudgetService` (frontend), the functional `authInterceptor` (`core/interceptors/auth.interceptor.ts`) only does 401→refresh→retry. It attaches `Authorization: Bearer …` ONLY on the retry-clone inside the 401 handler (line 24) — never on the initial outgoing request. So a new HTTP service that relies on the interceptor to authenticate would ship every first request with no bearer token, getting a 401 on every call (and only "working" after a needless refresh round-trip, if a refresh token happens to exist). `BudgetService` correctly attaches the token itself via a `getHeaders()` helper that reads `authService.getToken()` and throws if absent.
+**Why:** The interceptor's name and the visible `setHeaders: { Authorization }` line both strongly imply it owns request authentication. It doesn't — it owns token *recovery* (refresh-on-401), not token *attachment*. This project has no request-decorating interceptor at all; auth headers are the caller's responsibility.
+**Next time:** Every new Angular service in this project that calls an authenticated endpoint must attach the bearer token itself — copy the `BudgetService.getHeaders()` / `callWithHeaders()` pattern (read `authService.getToken()`, throw/`throwError` if null, pass `{ headers }` on every call). Do NOT assume `authInterceptor` adds the header. Treat the interceptor as 401-recovery only.
+**Tags:** angular, auth, interceptor, frontend
+
+---
