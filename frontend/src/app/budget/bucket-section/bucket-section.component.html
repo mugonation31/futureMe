@@ -1,0 +1,59 @@
+<section class="bucket-section card" [attr.data-bucket]="bucketKey">
+  <!--
+    Task 29 slot: the computed, colour-flagged bucket dashboard summary
+    (goal vs actual, available to spend, over-flag) renders inside this
+    container without restructuring the section.
+  -->
+  <div class="bucket-summary-slot"></div>
+
+  <header class="bucket-header">
+    <div class="bucket-titles">
+      <h2 class="bucket-heading">{{ heading }}</h2>
+      <p class="bucket-subtitle">{{ subtitle }}</p>
+    </div>
+    <label class="goal-cell">
+      <span class="goal-cell-label">Goal %</span>
+      <input class="goal-input tabular-nums" type="number" min="0" max="100" step="1"
+             [value]="goalPct" (input)="onGoalInput($event)"
+             [attr.aria-label]="heading + ' goal percentage'" />
+    </label>
+  </header>
+
+  <ul class="line-items">
+    @for (item of view.line_items; track item.id) {
+      <li class="line-item-row">
+        @if (editingItemId === item.id) {
+          <input class="item-edit-label row-input" [value]="item.label" aria-label="Line item label" #editLabel />
+          <input class="item-edit-amount row-input amount-input" type="number" min="0" step="0.01"
+                 [value]="item.amount" aria-label="Line item amount" #editAmount />
+          <span class="row-actions">
+            <button type="button" class="item-save-btn btn-primary"
+                    [disabled]="pendingItemIds.has(item.id)"
+                    (click)="submitEdit(item.id, editLabel, editAmount)">Save</button>
+            <button type="button" class="item-cancel-btn btn-ghost"
+                    [disabled]="pendingItemIds.has(item.id)"
+                    (click)="editCancel.emit()">Cancel</button>
+          </span>
+        } @else {
+          <span class="item-label">{{ item.label }}</span>
+          <span class="item-amount tabular-nums">{{ money(item.amount) }}</span>
+          <span class="row-actions">
+            <button type="button" class="item-edit-btn btn-ghost"
+                    [disabled]="pendingItemIds.has(item.id)"
+                    (click)="editStart.emit(item.id)">Edit</button>
+            <button type="button" class="item-delete-btn btn-ghost"
+                    [disabled]="pendingItemIds.has(item.id)"
+                    (click)="deleteItem.emit(item.id)">Delete</button>
+          </span>
+        }
+      </li>
+    }
+  </ul>
+
+  <form class="item-add-form row-form" (submit)="submitAdd($event, addLabel, addAmount)">
+    <input class="item-add-label row-input" placeholder="Line item" aria-label="New line item label" #addLabel />
+    <input class="item-add-amount row-input amount-input" type="number" min="0" step="0.01"
+           placeholder="Amount" aria-label="New line item amount" #addAmount />
+    <button type="submit" class="item-add-btn btn-primary" [disabled]="addPending">Add</button>
+  </form>
+</section>

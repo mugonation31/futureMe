@@ -228,5 +228,24 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
       testMatch: ['**/dashboard/category-budgets.spec.ts'],
     },
+
+    /**
+     * budget project (Task 28)
+     * -------------------------
+     * Covers the Budget screen — income + three-bucket line-item CRUD, editable
+     * goal percentages, and the currency selector.
+     *
+     * Every backend call is served by a stateful in-memory mock via
+     * page.route() — no live backend required. The Angular dev server must be
+     * running on E2E_BASE_URL (default: 4202).
+     *
+     * Run only this project with:
+     *   npx playwright test --project=budget
+     */
+    {
+      name: 'budget',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: ['**/budget/budget.spec.ts'],
+    },
   ],
 });

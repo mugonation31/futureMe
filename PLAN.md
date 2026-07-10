@@ -890,7 +890,22 @@ Ship this ASAP so the user can start using it.
   - Nav shows only Budget + Settings; visual tone is calm, grey, minimal.
   - Authenticated users landing on `/dashboard` or a removed route reach `/budget`.
 
-### Task 28 — Frontend: Budget screen — income + three buckets CRUD (Size: L)
+### Task 28 — Frontend: Budget screen — income + three buckets CRUD (Size: L) [x]
+> **Completed (2026-07-10)**: shipped through the quality cycle — unit TDD (156
+> specs, +2 regression), code review (Approve, 0 blocking), security scan (clean, 0
+> secrets/injection), and E2E (11/11 budget specs pass live). Implementation:
+> `budget.component` (income + line-item + goals + currency CRUD) with a reusable
+> `bucket-section/` sub-component, `money.ts` currency/format helpers, and
+> `_budget-rows.scss`. **Two review-driven fixes folded in:** (1) a `consumeSeq`
+> generation guard so a late refetch GET can't clobber a newer direct-consumed
+> currency/goals save (the `switchMap` channel only ordered refetch-vs-refetch);
+> (2) the currency path now applies the budget WITHOUT reseeding goal drafts, so an
+> unsaved goal edit survives a currency change. **E2E infra:** registered a `budget`
+> Playwright project (stateful page.route mock, no live backend) and fixed 2
+> test-only bugs in the never-run spec — a hasText row locator that went stale in
+> edit mode (now index-based), and an auth-guard assertion that didn't tolerate the
+> guard's `?returnUrl=` query string. **Discovery:** port 4202 is the stale Docker
+> frontend build; ran E2E against a fresh `ng serve` on 4203 → real backend 8002.
 - **Description**: The core screen. Income section plus the three buckets
   (Fundamentals / Future You / Fun, in that order) with inline line-item CRUD and
   editable goal % / currency.

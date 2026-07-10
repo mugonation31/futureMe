@@ -1,6 +1,114 @@
 <section class="budget-page">
-  <div class="budget-inner">
-    <h1 class="budget-title">Budget</h1>
-    <p class="budget-subtitle">Coming soon</p>
-  </div>
+  <h1 class="budget-title">Budget</h1>
+
+  @if (loading) {
+    <p class="budget-loading">Loading your budget…</p>
+  } @else if (error) {
+    <p class="budget-error">Something went wrong loading your budget. Please try again.</p>
+  } @else if (budget) {
+    <!--
+      Task 29 slot: the overall computed dashboard header (allocation status,
+      colour flags) renders inside this container without a restructure.
+    -->
+    <div class="budget-summary-slot"></div>
+
+    @if (mutationError) {
+      <p class="mutation-error" role="alert">{{ mutationError }}</p>
+    }
+
+    <div class="budget-toolbar">
+      <label class="currency-cell">
+        <span class="currency-cell-label">Currency</span>
+        <select class="currency-select" [disabled]="savingCurrency"
+                (change)="onCurrencyChange($event)" aria-label="Budget currency">
+          @if (!currencyCode) {
+            <option value="" selected disabled>—</option>
+          }
+          @for (code of currencyCodes; track code) {
+            <option [value]="code" [selected]="currencyCode === code">{{ code }}</option>
+          }
+        </select>
+      </label>
+    </div>
+
+    <section class="income-section card">
+      <header class="section-header">
+        <h2 class="section-heading">Income</h2>
+      </header>
+
+      <ul class="income-rows">
+        @for (stream of budget.income_streams; track stream.id) {
+          <li class="income-row">
+            @if (editingIncomeId === stream.id) {
+              <input class="income-edit-label row-input" [value]="stream.label" aria-label="Income label" #editLabel />
+              <input class="income-edit-amount row-input amount-input" type="number" min="0" step="0.01"
+                     [value]="stream.amount" aria-label="Income amount" #editAmount />
+              <span class="row-actions">
+                <button type="button" class="income-save-btn btn-primary"
+                        [disabled]="pendingIncomeIds.has(stream.id)"
+                        (click)="saveIncome(stream.id, editLabel, editAmount)">Save</button>
+                <button type="button" class="income-cancel-btn btn-ghost"
+                        [disabled]="pendingIncomeIds.has(stream.id)"
+                        (click)="cancelEditIncome()">Cancel</button>
+              </span>
+            } @else {
+              <span class="income-label">{{ stream.label }}</span>
+              <span class="income-amount tabular-nums">{{ money(stream.amount) }}</span>
+              <span class="row-actions">
+                <button type="button" class="income-edit-btn btn-ghost"
+                        [disabled]="pendingIncomeIds.has(stream.id)"
+                        (click)="startEditIncome(stream.id)">Edit</button>
+                <button type="button" class="income-delete-btn btn-ghost"
+                        [disabled]="pendingIncomeIds.has(stream.id)"
+                        (click)="removeIncome(stream.id)">Delete</button>
+              </span>
+            }
+          </li>
+        }
+      </ul>
+
+      <form class="income-add-form row-form" (submit)="addIncome($event, addLabel, addAmount)">
+        <input class="income-add-label row-input" placeholder="Income source" aria-label="New income label" #addLabel />
+        <input class="income-add-amount row-input amount-input" type="number" min="0" step="0.01"
+               placeholder="Amount" aria-label="New income amount" #addAmount />
+        <button type="submit" class="income-add-btn btn-primary" [disabled]="addingIncome">Add</button>
+      </form>
+
+      <p class="income-total-row">
+        <span>Total income</span>
+        <span class="income-total tabular-nums">{{ money(incomeTotal) }}</span>
+      </p>
+    </section>
+
+    <div class="goals-bar card">
+      <p class="goals-bar-text">
+        <span class="goals-total tabular-nums">Total: {{ goalsTotalDisplay }}%</span>
+        @if (!goalsAt100) {
+          <span class="goals-hint">Your three goals add up to {{ goalsTotalDisplay }}% — nudge them to 100% to save.</span>
+        }
+      </p>
+      <button type="button" class="goals-save btn-primary"
+              [disabled]="goalsSaveDisabled" (click)="saveGoals()">Save goals</button>
+    </div>
+
+    @for (def of bucketDefs; track def.key) {
+      <app-bucket-section
+        [bucketKey]="def.key"
+        [view]="budget.buckets[def.key]"
+        [heading]="def.heading"
+        [subtitle]="def.subtitle"
+        [symbol]="symbol"
+        [goalPct]="goalPctFor(def.key)"
+        [pendingItemIds]="pendingItemIds"
+        [addPending]="addingItemBucket === def.key"
+        [editingItemId]="editingLineItemId"
+        (goalPctChange)="onGoalChange(def.key, $event)"
+        (addItem)="addLineItem(def.key, $event)"
+        (updateItem)="saveLineItem($event)"
+        (deleteItem)="removeLineItem($event)"
+        (editStart)="editingLineItemId = $event"
+        (editCancel)="editingLineItemId = null"
+      />
+    }
+  }
 </section>

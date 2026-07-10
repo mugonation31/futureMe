@@ -1,0 +1,49 @@
+// Shared row/form styling for the budget screen's editable lists
+// (income streams in BudgetComponent, line items in BucketSectionComponent).
+// Calm, grey, minimal: quiet borders, muted actions, tabular money.
+
+@mixin budget-rows {
+  .row-actions {
+    display: flex;
+    gap: var(--space-xs);
+    flex-shrink: 0;
+
+    button {
+      font-size: 0.75rem;
+      padding: 4px 10px;
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+    }
+  }
+
+  .row-form {
+    display: flex;
+    gap: var(--space-sm);
+    margin-top: var(--space-md);
+  }
+
+  .row-input {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-btn);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.875rem;
+
+    &::placeholder {
+      color: var(--text-muted);
+    }
+  }
+
+  .amount-input {
+    flex: 0 1 140px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+}

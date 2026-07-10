@@ -1,0 +1,74 @@
+@use '../budget-rows' as rows;
+
+.bucket-section {
+  border: 1px solid var(--border);
+
+  @include rows.budget-rows;
+}
+
+.bucket-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.bucket-heading {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.bucket-subtitle {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin: 2px 0 0;
+}
+
+/* Spreadsheet-style editable goal cell in the section header. */
+.goal-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.goal-input {
+  width: 72px;
+  padding: 6px 8px;
+  text-align: right;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-btn);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.875rem;
+}
+
+.line-items {
+  list-style: none;
+  margin: var(--space-md) 0 0;
+  padding: 0;
+}
+
+.line-item-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.item-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.item-amount {
+  min-width: 110px;
+  text-align: right;
+}
